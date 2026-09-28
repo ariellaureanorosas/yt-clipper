@@ -52,11 +52,13 @@
    - **Horizontal (1920×1080)** — formato normal, para YouTube.
    - **Vertical (1080×1920)** — formato de celular, para Shorts/TikTok/Reels.
 4. **Escolha o trecho** (início e fim) usando as barrinhas deslizantes ou digitando o tempo (`00:01:30`).
-5. Clique em **📁 Selecionar pasta** para escolher onde salvar o vídeo.
+5. Clique no botão **Selecionar** (ao lado de *Pasta de salvamento*) para escolher onde salvar o vídeo. Você também pode digitar o caminho na caixinha.
 6. Clique no botão **Processar**.
 7. Espere a barra de progresso chegar a 100%. Pronto! Seu vídeo recortado está na pasta escolhida. ✅
 
 > 💡 Dica: quanto menor o trecho, mais rápido fica pronto. Cortes que não mudam o formato são quase instantâneos.
+>
+> ⚠️ **Na primeira vez**, o programa pode precisar baixar o **ffmpeg** (~80 MB) e pedir que você aguarde a barra chegar a 100% antes de processar. Isso só acontece uma vez.
 
 ---
 
@@ -109,7 +111,7 @@ yt-clipper/
 ├── core/
 │   ├── downloader.py    # Download via yt-dlp
 │   └── cutter.py        # Corte/conversão via ffmpeg
-├── assets/              # ffmpeg/ffprobe (embutidos no .exe)
+├── assets/              # ffmpeg/ffprobe (baixados automaticamente na 1ª execução)
 ├── icons/
 │   └── app.ico          # Ícone do aplicativo
 ├── instalar.bat         # Instalador para usuários (compila + atalho)
