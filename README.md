@@ -125,9 +125,10 @@ yt-clipper/
 ├── instalar.bat         # Instalador para usuários (compila + atalho)
 ├── requirements.txt
 ├── build.spec
+├── LICENSE
 └── README.md
 ```
 
 ## Licença
 
-Uso pessoal / interno.
+Licenciado sob a **MIT License**. Consulte o arquivo [`LICENSE`](LICENSE) para os termos completos.
