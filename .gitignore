@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# PyInstaller
+build/
+dist/
+*.spec.bak
+
+# ffmpeg/assets grandes (baixados automaticamente)
+assets/ffmpeg.exe
+assets/ffprobe.exe
+
+# Vídeos/testes
+*.mp4
+
+# IDE
+.idea/
+.vscode/
