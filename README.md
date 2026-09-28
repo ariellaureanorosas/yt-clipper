@@ -1,6 +1,6 @@
 # 🎬 YouTube Clipper
 
-**Baixe vídeos do YouTube, corte trechos e converta para formato **vertical (9:16, para TikTok/Shorts/Reels)** ou **horizontal (16:9, para YouTube)** — tudo em um programa simples, com botões.
+Baixe vídeos do YouTube, corte trechos e converta para formato **vertical (9:16, para TikTok/Shorts/Reels)** ou **horizontal (16:9, para YouTube)** — tudo em um programa simples, com botões.
 
 > Você não precisa saber programar. Siga o passo a passo abaixo.
 
