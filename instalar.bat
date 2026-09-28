@@ -4,8 +4,8 @@ chcp 65001 >nul
 
 rem ============================================================
 rem  Instalador do YouTube Clipper
-rem  Baixa dependencias, compila o app e cria o atalho na
-rem  area de trabalho. Pode demorar alguns minutos.
+rem  Instala o Python (se preciso), baixa dependencias, compila
+rem  o app e cria o atalho na area de trabalho. Pode demorar.
 rem ============================================================
 
 title Instalador do YouTube Clipper
@@ -19,21 +19,46 @@ echo  ==============================================
 echo.
 
 rem ---------- 1. Localizar Python ----------
-set "PYTHON_CMD="
-py --version >nul 2>nul
-if not errorlevel 1 set "PYTHON_CMD=py"
-if not defined PYTHON_CMD (
-    python --version >nul 2>nul
-    if not errorlevel 1 set "PYTHON_CMD=python"
+call :locate_python
+if defined PYTHON_CMD goto :python_pronto
+
+echo  Python nao foi encontrado no sistema.
+echo  Vou instala-lo automaticamente agora (baixa ~25 MB).
+echo.
+echo    Tentando instalar pelo Windows Store (winget)...
+winget install -e --id Python.Python.3.12 --silent --accept-package-agreements --accept-source-agreements >nul 2>nul
+call :locate_python
+if defined PYTHON_CMD (
+    echo    Python instalado pelo winget!
+    goto :python_pronto
 )
-if not defined PYTHON_CMD (
-    echo  [ERRO] Python nao foi encontrado no sistema.
-    echo  Instale o Python 3.11 ou mais recente de:
-    echo  https://www.python.org/downloads/
-    echo  IMPORTANTE: marque a opcao "Add python.exe to PATH"
-    echo  na tela de instalacao.
-    goto :fim
+
+echo    Winget nao funcionou. Baixando instalador oficial...
+set "PY_URL=https://www.python.org/ftp/python/3.12.10/python-3.12.10-amd64.exe"
+set "PY_FILE=%TEMP%\python-installer-yc.exe"
+curl -L --fail --silent --show-error -o "%PY_FILE%" "%PY_URL%" >nul 2>nul
+if errorlevel 1 (
+    echo    Falha ao baixar o Python pelo site oficial.
+    goto :python_falhou
 )
+echo    Instalando Python (aguarde, leva alguns minutos)...
+"%PY_FILE%" /quiet InstallAllUsers=0 PrependPath=1 Include_pip=1 Include_launcher=1
+call :locate_python
+if defined PYTHON_CMD (
+    echo    Python instalado com sucesso!
+    goto :python_pronto
+)
+
+:python_falhou
+echo.
+echo  [ERRO] Nao foi possivel instalar o Python automaticamente.
+echo  Instale o Python 3.11 ou mais recente de forma manual:
+echo  https://www.python.org/downloads/
+echo  IMPORTANTE: na instalacao marque a opcao "Add python.exe to PATH".
+echo  Depois rode este instalador novamente.
+goto :fim
+
+:python_pronto
 echo  Python encontrado.
 echo.
 
@@ -97,6 +122,32 @@ echo    Pronto! Abra o atalho "YouTube Clipper"
 echo    na area de trabalho para usar o app.
 echo  ==============================================
 echo.
+
+goto :fim
+
+:locate_python
+rem Detecta o Python em: launcher (py) -> PATH (python) -> instalacao de
+rem usuario (LocalAppData), usada pelo winget e pelo instalador oficial.
+set "PYTHON_CMD="
+py --version >nul 2>nul
+if not errorlevel 1 (
+    set "PYTHON_CMD=py"
+    exit /b 0
+)
+python --version >nul 2>nul
+if not errorlevel 1 (
+    set "PYTHON_CMD=python"
+    exit /b 0
+)
+if defined LOCALAPPDATA (
+    for /d %%D in ("%LOCALAPPDATA%\Programs\Python\Python3*") do (
+        if exist "%%D\python.exe" (
+            set "PYTHON_CMD=%%D\python.exe"
+            exit /b 0
+        )
+    )
+)
+exit /b 1
 
 :fim
 echo.

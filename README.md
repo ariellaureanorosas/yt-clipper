@@ -27,25 +27,15 @@
 
 > ⚠️ **Importante:** copie ou extraia para uma pasta do seu computador (ex.: `Documentos`). **Não rode direto de dentro de um arquivo .zip aberto** — o programa não funcionaria.
 
-### Passo 3 — Instalar o Python (só na primeira vez)
-
-O programa precisa do **Python** instalado no computador:
-
-1. Acesse: **https://www.python.org/downloads/**
-2. Clique no botão amarelo **"Download Python 3.x"**.
-3. Abra o arquivo baixado.
-4. **MUITO IMPORTANTE:** na primeira tela, **marque a caixinha** `Add python.exe to PATH` (no rodapé).
-5. Clique em **Install Now** e aguarde terminar.
-6. Ao final, clique em **Close**.
-
-### Passo 4 — Rodar o instalador
+### Passo 3 — Rodar o instalador
 
 1. Na pasta **yt-clipper-main**, clique **duas vezes** em **`instalar.bat`**.
-2. Vai abrir uma janela preta. **Aguarde** (a primeira vez leva alguns minutos, pois ele baixa e prepara tudo).
-3. Ao final, a janela vai mostrar **"Pronto!"**.
-4. Feche a janela clicando em qualquer tecla.
+2. Vai abrir uma janela preta. **Aguarde** (a primeira vez leva alguns minutos, pois ele instala o que for preciso e prepara tudo).
+3. O instalador instala o **Python automaticamente** se o computador ainda não tiver (baixa ~25 MB).
+4. Ao final, a janela vai mostrar **"Pronto!"**.
+5. Feche a janela clicando em qualquer tecla.
 
-### Passo 5 — Abrir o programa
+### Passo 4 — Abrir o programa
 
 - Na sua **área de trabalho (Desktop)** apareceu o atalho **"YouTube Clipper"**.
 - Clique duas vezes nele para abrir o programa. 🙂
@@ -76,7 +66,7 @@ O programa precisa do **Python** instalado no computador:
 O Windows às vezes desconfia de programas recém-criados. Clique em **"Mais informações"** e depois em **"Executar assim mesmo"**.
 
 ### A janela do instalador fecha sozinha e não cria o atalho
-Verifique se o **Python foi instalado com a caixinha "Add python.exe to PATH" marcada** (Passo 3). Se não marcou, instale de novo marcando a opção.
+Reinicie o computador e rode o **`instalar.bat`** novamente. Se o erro persistir na hora de instalar o Python, instale o Python manualmente de https://www.python.org/downloads/ (marcando a opção "Add python.exe to PATH") e rode o instalador de novo.
 
 ### "Não foi possível baixar o ffmpeg"
 Isso acontece sem internet ou com rede bloqueada. Tente de novo mais tarde ou verifique sua conexão.
