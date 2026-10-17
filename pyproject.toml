@@ -1,0 +1,36 @@
+# Configuração de ferramentas de desenvolvimento (lint, formatação, testes).
+#
+# Este repositório NÃO é um pacote instalável via pip: é um app desktop
+# empacotado com PyInstaller. Por isso aqui ficam apenas as configurações das
+# ferramentas; as dependências continuam em requirements*.txt.
+
+[tool.ruff]
+line-length = 88
+target-version = "py39"
+extend-exclude = ["build", "dist", "assets"]
+
+[tool.ruff.lint]
+# E/W: erros e avisos do pycodestyle | F: pyflakes (imports/names) | I: isort
+select = ["E", "F", "W", "I"]
+ignore = [
+    "E501",  # comprimento de linha é responsabilidade do black
+]
+
+[tool.black]
+line-length = 88
+target-version = ["py39"]
+# Mantém as aspas simples usadas no projeto (evita reformatar tudo à toa).
+skip-string-normalization = true
+extend-exclude = '''
+/(
+    build
+  | dist
+  | assets
+)/
+'''
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+# Permite importar "core" e "ui" a partir da raiz do projeto.
+pythonpath = ["."]

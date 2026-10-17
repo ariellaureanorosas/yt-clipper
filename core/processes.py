@@ -55,7 +55,11 @@ def kill_ffmpeg_by_dir_quoted(token: str) -> None:
     try:
         subprocess.run(
             [
-                'powershell', '-NoProfile', '-NonInteractive', '-Command', ps_cmd,
+                'powershell',
+                '-NoProfile',
+                '-NonInteractive',
+                '-Command',
+                ps_cmd,
             ],
             capture_output=True,
             text=True,
@@ -77,6 +81,7 @@ def cleanup_for_dir(dir_path: str) -> None:
     kill_ffmpeg_by_dir_quoted(token)
     try:
         import shutil
+
         shutil.rmtree(dir_path, ignore_errors=True)
     except Exception:
         pass

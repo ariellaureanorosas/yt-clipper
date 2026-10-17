@@ -3,6 +3,11 @@ __pycache__/
 *.py[cod]
 *.egg-info/
 
+# Ambientes virtuais
+venv/
+.venv/
+env/
+
 # PyInstaller
 build/
 dist/
@@ -15,6 +20,17 @@ assets/ffprobe.exe
 # Vídeos/testes
 *.mp4
 
+# Ferramentas / cobertura
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+*.log
+
 # IDE
 .idea/
 .vscode/
+
+# Documentos pessoais (não sobem para o GitHub)
+ENTREVISTA.md
