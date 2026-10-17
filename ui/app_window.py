@@ -5,30 +5,32 @@ Interface gráfica com customtkinter.
 
 import os
 import re
-import threading
 import tempfile
-from tkinter import filedialog
-from io import BytesIO
-
-import customtkinter as ctk
+import threading
 import tkinter as tk
 import urllib.request
+from io import BytesIO
+from tkinter import filedialog
+
+import customtkinter as ctk
 from PIL import Image
 from yt_dlp.utils import DownloadCancelled
 
+from core.cutter import check_ffmpeg_available, cut_video, download_ffmpeg
 from core.downloader import (
-    is_valid_youtube_url,
-    fetch_video_info,
-    download_video,
     _format_download_error,
+    download_video,
+    fetch_video_info,
+    is_valid_youtube_url,
 )
-from core.cutter import check_ffmpeg_available, download_ffmpeg, cut_video
+from core.logging_config import get_logger
 from core.processes import ProcessingCancelled, cleanup_for_dir
-
 
 # Configuração do customtkinter
 ctk.set_appearance_mode('dark')
 ctk.set_default_color_theme('blue')
+
+logger = get_logger(__name__)
 
 
 def _sanitize_filename(name: str) -> str:
@@ -62,6 +64,7 @@ def _parse_time(time_str: str) -> float:
 # ──────────────────────────────────────────────────────────────
 #  RANGE SLIDER CUSTOM (Canvas com duas bolinhas arrastáveis)
 # ──────────────────────────────────────────────────────────────
+
 
 class RangeSliderCanvas(ctk.CTkFrame):
     """
@@ -157,32 +160,50 @@ class RangeSliderCanvas(ctk.CTkFrame):
 
         # Fundo da trilha (cinza escuro)
         self.canvas.create_rectangle(
-            track_left, track_y - self.TRACK_H,
-            track_right, track_y + self.TRACK_H,
-            fill='#555555', outline='', tags='track_bg',
+            track_left,
+            track_y - self.TRACK_H,
+            track_right,
+            track_y + self.TRACK_H,
+            fill='#555555',
+            outline='',
+            tags='track_bg',
         )
 
         # Faixa selecionada (azul)
         x_start = self._val_to_x(self._start_val, track_left, track_w)
         x_end = self._val_to_x(self._end_val, track_left, track_w)
         self.canvas.create_rectangle(
-            x_start, track_y - self.TRACK_H,
-            x_end, track_y + self.TRACK_H,
-            fill='#1f6aa5', outline='', tags='track_sel',
+            x_start,
+            track_y - self.TRACK_H,
+            x_end,
+            track_y + self.TRACK_H,
+            fill='#1f6aa5',
+            outline='',
+            tags='track_sel',
         )
 
         # Handle início (azul claro)
         self.canvas.create_oval(
-            x_start - self.HANDLE_R, track_y - self.HANDLE_R,
-            x_start + self.HANDLE_R, track_y + self.HANDLE_R,
-            fill='#3b8ed0', outline='white', width=2, tags='handle_start',
+            x_start - self.HANDLE_R,
+            track_y - self.HANDLE_R,
+            x_start + self.HANDLE_R,
+            track_y + self.HANDLE_R,
+            fill='#3b8ed0',
+            outline='white',
+            width=2,
+            tags='handle_start',
         )
 
         # Handle fim (verde)
         self.canvas.create_oval(
-            x_end - self.HANDLE_R, track_y - self.HANDLE_R,
-            x_end + self.HANDLE_R, track_y + self.HANDLE_R,
-            fill='#45a65b', outline='white', width=2, tags='handle_end',
+            x_end - self.HANDLE_R,
+            track_y - self.HANDLE_R,
+            x_end + self.HANDLE_R,
+            track_y + self.HANDLE_R,
+            fill='#45a65b',
+            outline='white',
+            width=2,
+            tags='handle_end',
         )
 
     def _redraw(self):
@@ -272,6 +293,7 @@ class RangeSliderCanvas(ctk.CTkFrame):
 # ──────────────────────────────────────────────────────────────
 #  JANELA PRINCIPAL
 # ──────────────────────────────────────────────────────────────
+
 
 class AppWindow(ctk.CTk):
     """Janela principal do aplicativo."""
@@ -385,9 +407,7 @@ class AppWindow(ctk.CTk):
         )
         self.duration_label.pack(fill='x')
 
-        self.id_label = ctk.CTkLabel(
-            info_text_frame, text='ID: —', anchor='w'
-        )
+        self.id_label = ctk.CTkLabel(info_text_frame, text='ID: —', anchor='w')
         self.id_label.pack(fill='x')
 
         # === SEÇÃO: FORMATO ===
@@ -501,9 +521,7 @@ class AppWindow(ctk.CTk):
         self.progress_bar.pack(fill='x', padx=12, pady=(8, 4))
         self.progress_bar.set(0)
 
-        self.status_label = ctk.CTkLabel(
-            progress_frame, text='Pronto', anchor='w'
-        )
+        self.status_label = ctk.CTkLabel(progress_frame, text='Pronto', anchor='w')
         self.status_label.pack(fill='x', padx=12, pady=(0, 8))
 
         # === SEÇÃO: BOTÕES ===
@@ -645,6 +663,7 @@ class AppWindow(ctk.CTk):
                 info = fetch_video_info(url)
                 self.after(0, lambda: self._display_video_info(info))
             except Exception as e:
+                logger.exception('Falha ao carregar informações do vídeo: %s', url)
                 err_msg = _format_download_error(e)
                 self.after(
                     0,
@@ -703,14 +722,12 @@ class AppWindow(ctk.CTk):
                 data = resp.read()
             img = Image.open(BytesIO(data))
             img = img.resize((160, 90), Image.Resampling.LANCZOS)
-            ctk_img = ctk.CTkImage(
-                light_image=img, dark_image=img, size=(160, 90)
-            )
+            ctk_img = ctk.CTkImage(light_image=img, dark_image=img, size=(160, 90))
             self.after(
                 0, lambda: self.thumbnail_label.configure(image=ctk_img, text='')
             )
         except Exception:
-            pass
+            logger.warning('Não foi possível carregar a miniatura: %s', url)
 
     def _validate_inputs(self) -> str:
         """Valida todas as entradas. Retorna mensagem de erro ou None."""
@@ -783,7 +800,6 @@ class AppWindow(ctk.CTk):
             tmp_dir = tempfile.mkdtemp(prefix='ytclip_')
             self._tmp_dir = tmp_dir
             try:
-                clip_len = end_time - start_time
                 output_name = f'{filename}_cortado'
                 output_path = os.path.join(folder, f'{output_name}.mp4')
                 # Arquivo parcial (deve sumir em erro/cancelamento/fechamento)
@@ -791,20 +807,31 @@ class AppWindow(ctk.CTk):
 
                 _progress(0, 'Baixando vídeo...')
                 video_path = download_video(
-                    url, tmp_dir, filename, _progress, start_time, end_time,
+                    url,
+                    tmp_dir,
+                    filename,
+                    _progress,
+                    start_time,
+                    end_time,
                     self.cancel_event,
                 )
 
                 _progress(0, 'Cortando vídeo...')
                 cut_video(
-                    video_path, output_path, start_time, end_time,
-                    target_format, _progress, self.cancel_event,
+                    video_path,
+                    output_path,
+                    start_time,
+                    end_time,
+                    target_format,
+                    _progress,
+                    self.cancel_event,
                 )
 
                 _progress(100, 'Concluído com sucesso!')
                 self.after(0, self._processing_done)
 
             except (ProcessingCancelled, DownloadCancelled):
+                logger.info('Processamento cancelado pelo usuário.')
                 if output_path and os.path.exists(output_path):
                     try:
                         os.remove(output_path)
@@ -823,6 +850,7 @@ class AppWindow(ctk.CTk):
                 )
                 self.after(0, self._processing_reset)
             except Exception as e:
+                logger.exception('Falha no processamento do vídeo.')
                 if output_path and os.path.exists(output_path):
                     try:
                         os.remove(output_path)
@@ -907,9 +935,7 @@ class AppWindow(ctk.CTk):
         self.process_btn.configure(state='normal')
         self.open_folder_btn.configure(state='normal')
         self.cancel_btn.configure(state='disabled')
-        self.status_label.configure(
-            text='Concluído com sucesso!', text_color='green'
-        )
+        self.status_label.configure(text='Concluído com sucesso!', text_color='green')
 
     def _processing_reset(self):
         """Reseta o estado após erro/cancelamento."""

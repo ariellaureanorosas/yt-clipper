@@ -7,21 +7,37 @@ import os
 import re
 import threading
 import time
-import yt_dlp
 
+import yt_dlp
 from yt_dlp.utils import DownloadCancelled
 
 from core.cutter import get_ffmpeg_path
+from core.logging_config import get_logger
+
+logger = get_logger(__name__)
 
 
-# Regex para validação de URLs do YouTube
+# Regex para validação de URLs do YouTube.
+# Aceita os formatos gerados pelo botão "Compartilhar" (inclui ?si=... no final):
+#   - youtube.com/watch?v=ID ou ?v=ID&list=...
+#   - youtu.be/ID
+#   - youtube.com/shorts/ID
+#   - youtube.com/live/ID      (lives e estreias)
+#   - youtube.com/embed/ID | /v/ID
+#   - subdomínios www, m e music, e youtube-nocookie.com
 _YT_REGEX = re.compile(
-    r'(?:https?://)?(?:www\.)?(?:youtube\.com/watch\?v=|youtu\.be/|youtube\.com/shorts/)[\w-]+'
+    r'^(?:https?://)?'
+    r'(?:'
+    r'(?:(?:www|m|music)\.)?(?:youtube\.com|youtube-nocookie\.com)/'
+    r'(?:watch\?(?:[^\s]*&)?v=|shorts/|live/|embed/|v/)'
+    r'|(?:www\.)?youtu\.be/'
+    r')'
+    r'[\w-]+'
 )
 
 
 def is_valid_youtube_url(url: str) -> bool:
-    """Verifica se a URL é um link válido do YouTube."""
+    """Verifica se a URL é um link válido do YouTube (watch, shorts, live, embed ou youtu.be)."""
     return bool(_YT_REGEX.match(url.strip()))
 
 
@@ -33,7 +49,7 @@ def _format_download_error(e: Exception) -> str:
     msg = str(e)
     # Remove prefixo 'ERROR: ' duplicado que o yt-dlp já inclui na mensagem
     if msg.startswith('ERROR: '):
-        msg = msg[len('ERROR: '):]
+        msg = msg[len('ERROR: ') :]
     if _FORMAT_ERROR in msg:
         return (
             'Este video exige login do YouTube (formatos bloqueados). '
@@ -57,12 +73,19 @@ def fetch_video_info(url: str) -> dict:
         'no_warnings': True,
         'skip_download': True,
     }
+    logger.debug('Buscando informações do vídeo: %s', url)
     with yt_dlp.YoutubeDL(opts) as ydl:
         info = ydl.extract_info(url, download=False)
 
+    if not info:
+        raise ValueError('Não foi possível obter informações do vídeo.')
+
+    # Lives/estreias em andamento não têm duração definida (o yt-dlp devolve
+    # duration=None, e não a chave ausente). Normaliza para 0 para não quebrar
+    # a formatação de tempo da interface.
     return {
-        'title': info.get('title', 'Sem título'),
-        'duration': info.get('duration', 0),
+        'title': info.get('title') or 'Sem título',
+        'duration': info.get('duration') or 0,
         'thumbnail_url': info.get('thumbnail', ''),
         'id': info.get('id', ''),
     }
@@ -105,6 +128,7 @@ def download_video(
     if ffmpeg_path != 'ffmpeg':
         try:
             from yt_dlp.postprocessor.ffmpeg import FFmpegPostProcessor
+
             FFmpegPostProcessor._ffmpeg_location.set(ffmpeg_path)
         except Exception:
             pass
@@ -137,9 +161,13 @@ def download_video(
                 pct = (downloaded / total) * 100
                 progress_callback(pct, f'Baixando... {pct:.1f}%{speed_str}')
             else:
-                progress_callback(-1, f'Baixando... {downloaded / 1_000_000:.1f} MB{speed_str}')
+                progress_callback(
+                    -1, f'Baixando... {downloaded / 1_000_000:.1f} MB{speed_str}'
+                )
         elif status == 'finished' and progress_callback:
-            _state['finished_mb'] += (d.get('total_bytes') or d.get('downloaded_bytes', 0)) / 1_000_000
+            _state['finished_mb'] += (
+                d.get('total_bytes') or d.get('downloaded_bytes', 0)
+            ) / 1_000_000
             progress_callback(100, 'Download concluído, processando...')
 
     def _monitor():
@@ -149,15 +177,19 @@ def download_video(
         while not _state['stop'].wait(0.5):
             if cancel_event.is_set():
                 from core.processes import kill_ffmpeg_by_dir_quoted
+
                 kill_ffmpeg_by_dir_quoted(token)
                 return
             if progress_callback and (time.time() - _state['last_hook']) > 2.5:
                 try:
-                    total = sum(
-                        os.path.getsize(os.path.join(output_path, f))
-                        for f in os.listdir(output_path)
-                        if not f.endswith('.mp4')
-                    ) / 1_000_000
+                    total = (
+                        sum(
+                            os.path.getsize(os.path.join(output_path, f))
+                            for f in os.listdir(output_path)
+                            if not f.endswith('.mp4')
+                        )
+                        / 1_000_000
+                    )
                 except Exception:
                     total = 0.0
                 base = _state['finished_mb'] + total
@@ -204,14 +236,18 @@ def download_video(
 
     monitor = threading.Thread(target=_monitor, daemon=True)
     monitor.start()
+    logger.info('Iniciando download: %s -> %s', url, output_path)
     try:
         with yt_dlp.YoutubeDL(opts) as ydl:
             ydl.download([url])
     except DownloadCancelled:
+        logger.info('Download cancelado pelo usuário: %s', url)
         raise
     except Exception:
         if cancel_event.is_set():
+            logger.info('Download interrompido (cancelamento): %s', url)
             raise DownloadCancelled('Cancelado pelo usuário')
+        logger.exception('Falha no download: %s', url)
         raise
     finally:
         cancel_event.clear()

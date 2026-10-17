@@ -3,8 +3,8 @@ YouTube Clipper - Ponto de entrada.
 Aplicativo desktop para download e corte de vídeos do YouTube.
 """
 
-import sys
 import os
+import sys
 
 # Garantir que o diretório do projeto está no path
 if getattr(sys, 'frozen', False):
@@ -17,7 +17,12 @@ if base_dir not in sys.path:
 
 
 def main():
+    from core.logging_config import get_logger, setup_logging
     from ui.app_window import AppWindow
+
+    log_path = setup_logging()
+    logger = get_logger(__name__)
+    logger.info('Aplicativo iniciado. Log em: %s', log_path)
 
     app = AppWindow()
     app.mainloop()

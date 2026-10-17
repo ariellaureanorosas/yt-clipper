@@ -46,7 +46,7 @@ Baixe vídeos do YouTube, corte trechos e converta para formato **vertical (9:16
 
 ## 🎮 Como usar o programa
 
-1. **Cole o link do vídeo** do YouTube no campo lá de cima (aquele que começa com `https://www.youtube.com/watch?v=...`).
+1. **Cole o link do vídeo** do YouTube no campo lá de cima. Pode colar o link normal (`https://www.youtube.com/watch?v=...`) ou o link gerado pelo botão **Compartilhar** do YouTube — funcionam `https://youtu.be/...`, `https://www.youtube.com/live/...` (lives/estreias), Shorts, links do celular (`m.youtube.com`) e vídeos incorporados. O `?si=...` no final não atrapalha.
 2. Clique em **Carregar**. O programa mostra o título do vídeo, a duração e a miniatura.
 3. **Escolha o formato:**
    - **Horizontal (1920×1080)** — formato normal, para YouTube.
@@ -85,8 +85,26 @@ Feche e abra de novo. Se continuar, rode o **`instalar.bat`** novamente (ele con
 ### Rodar em modo desenvolvimento
 
 ```bash
-pip install -r requirements.txt
+pip install -r requirements-dev.txt
 python main.py
+```
+
+### Testes e qualidade de código
+
+```bash
+pytest                       # testes automatizados
+ruff check .                 # lint (imports, nomes, erros)
+black core ui tests main.py  # formatação
+```
+
+O repositório tem CI (GitHub Actions) que roda lint, formatação e testes a cada push/PR na branch `main`.
+
+### Logs
+
+Em caso de erro, o aplicativo grava um log de diagnóstico em:
+
+```
+%LOCALAPPDATA%\YouTubeClipper\logs\app.log
 ```
 
 ### Gerar o executável
@@ -110,12 +128,17 @@ yt-clipper/
 │   └── app_window.py    # Interface gráfica
 ├── core/
 │   ├── downloader.py    # Download via yt-dlp
-│   └── cutter.py        # Corte/conversão via ffmpeg
+│   ├── cutter.py        # Corte/conversão via ffmpeg
+│   ├── processes.py     # Registro/cancelamento de subprocessos
+│   └── logging_config.py # Logging em arquivo
+├── tests/               # Testes automatizados (pytest)
 ├── assets/              # ffmpeg/ffprobe (baixados automaticamente na 1ª execução)
 ├── icons/
 │   └── app.ico          # Ícone do aplicativo
 ├── instalar.bat         # Instalador para usuários (compila + atalho)
 ├── requirements.txt
+├── requirements-dev.txt
+├── pyproject.toml       # Configuração de lint/format/testes
 ├── build.spec
 ├── LICENSE
 └── README.md

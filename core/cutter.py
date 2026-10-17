@@ -10,7 +10,10 @@ import subprocess
 import sys
 import threading
 
+from core.logging_config import get_logger
 from core.processes import ProcessingCancelled, register, unregister
+
+logger = get_logger(__name__)
 
 
 def _base_dir() -> str:
@@ -89,9 +92,9 @@ def download_ffmpeg(progress_callback=None) -> bool:
     Baixa ffmpeg automaticamente para a pasta assets/.
     Retorna True se sucesso, False se falha.
     """
+    import tempfile
     import urllib.request
     import zipfile
-    import tempfile
 
     assets_dir = _get_assets_dir()
     os.makedirs(assets_dir, exist_ok=True)
@@ -174,10 +177,14 @@ def _get_video_resolution(input_path: str) -> tuple:
         result = subprocess.run(
             [
                 ffprobe,
-                '-v', 'error',
-                '-select_streams', 'v:0',
-                '-show_entries', 'stream=width,height',
-                '-of', 'csv=p=0',
+                '-v',
+                'error',
+                '-select_streams',
+                'v:0',
+                '-show_entries',
+                'stream=width,height',
+                '-of',
+                'csv=p=0',
                 input_path,
             ],
             capture_output=True,
@@ -203,10 +210,14 @@ def _get_video_codec(input_path: str) -> str:
         result = subprocess.run(
             [
                 ffprobe,
-                '-v', 'error',
-                '-select_streams', 'v:0',
-                '-show_entries', 'stream=codec_name',
-                '-of', 'csv=p=0',
+                '-v',
+                'error',
+                '-select_streams',
+                'v:0',
+                '-show_entries',
+                'stream=codec_name',
+                '-of',
+                'csv=p=0',
                 input_path,
             ],
             capture_output=True,
@@ -230,10 +241,14 @@ def _get_audio_codec(input_path: str) -> str:
         result = subprocess.run(
             [
                 ffprobe,
-                '-v', 'error',
-                '-select_streams', 'a:0',
-                '-show_entries', 'stream=codec_name',
-                '-of', 'csv=p=0',
+                '-v',
+                'error',
+                '-select_streams',
+                'a:0',
+                '-show_entries',
+                'stream=codec_name',
+                '-of',
+                'csv=p=0',
                 input_path,
             ],
             capture_output=True,
@@ -247,9 +262,7 @@ def _get_audio_codec(input_path: str) -> str:
     return ''
 
 
-def _build_crop_filter(
-    orig_w: int, orig_h: int, target_w: int, target_h: int
-) -> str:
+def _build_crop_filter(orig_w: int, orig_h: int, target_w: int, target_h: int) -> str:
     """
     Retorna o filtro ffmpeg para crop + scale mantendo proporção (crop-first).
     Primeiro recorta a região central com a proporção ALVO direto da fonte e
@@ -268,13 +281,14 @@ def _build_crop_filter(
 
     if src_ratio > tgt_ratio:
         # Fonte mais "larga": recortar laterais, manter altura total
-        crop_h = oh
+        # (clamp_even(oh, oh) garante altura par, exigida pelo yuv420p)
+        crop_h = clamp_even(oh, oh)
         crop_w = clamp_even(round(oh * tw / th), ow)
         x = (ow - crop_w) // 2
         y = 0
     elif src_ratio < tgt_ratio:
         # Fonte mais "estreita": recortar topo/base, manter largura total
-        crop_w = ow
+        crop_w = clamp_even(ow, ow)
         crop_h = clamp_even(round(ow * th / tw), oh)
         x = 0
         y = (oh - crop_h) // 2
@@ -377,10 +391,14 @@ def _verify_output(path: str) -> bool:
         result = subprocess.run(
             [
                 ffprobe,
-                '-v', 'error',
-                '-select_streams', 'v:0',
-                '-show_entries', 'stream=codec_name',
-                '-of', 'csv=p=0',
+                '-v',
+                'error',
+                '-select_streams',
+                'v:0',
+                '-show_entries',
+                'stream=codec_name',
+                '-of',
+                'csv=p=0',
                 path,
             ],
             capture_output=True,
@@ -437,72 +455,103 @@ def cut_video(
 
     if needs_scale:
         # Resolução difere do alvo: re-encode com crop-first (mantém proporção).
-        use_copy = False
         crop_filter = _build_crop_filter(orig_w, orig_h, target_w, target_h)
         no_crop = crop_filter.startswith('scale=')
         base = [
-            ffmpeg, '-y',
-            '-ss', _format_time(start_time),
-            '-to', _format_time(end_time),
+            ffmpeg,
+            '-y',
+            '-ss',
+            _format_time(start_time),
+            '-to',
+            _format_time(end_time),
         ]
         tail = [
             *audio_args,
-            '-movflags', '+faststart',
-            '-max_muxing_queue_size', '1024',
+            '-movflags',
+            '+faststart',
+            '-max_muxing_queue_size',
+            '1024',
             part_path,
         ]
         # Sem crop (mesma proporção): scale_cuda na GPU dá ~1,6x de ganho.
         if no_crop and _cuda_available():
             gpu_cmd = [
                 *base,
-                '-hwaccel', 'cuda', '-hwaccel_output_format', 'cuda',
-                '-i', input_path,
-                '-vf', f'scale_cuda={target_w}:{target_h}',
-                '-c:v', 'h264_nvenc', '-preset', 'p1', '-cq', '23',
+                '-hwaccel',
+                'cuda',
+                '-hwaccel_output_format',
+                'cuda',
+                '-i',
+                input_path,
+                '-vf',
+                f'scale_cuda={target_w}:{target_h}',
+                '-c:v',
+                'h264_nvenc',
+                '-preset',
+                'p1',
+                '-cq',
+                '23',
                 *tail,
             ]
             candidates.append(('Re-encode (CUDA)', gpu_cmd))
         cpu_codec, _ = _get_best_video_encoder()
         cpu_cmd = [
             *base,
-            '-i', input_path,
+            '-i',
+            input_path,
             *cpu_codec,
-            '-vf', crop_filter, '-pix_fmt', 'yuv420p',
+            '-vf',
+            crop_filter,
+            '-pix_fmt',
+            'yuv420p',
             *tail,
         ]
         candidates.append(('Re-encode', cpu_cmd))
     elif _get_video_codec(input_path) == 'h264':
         # Stream copy: corte instantâneo, sem re-encode. Início exato com
         # -noaccurate_seek + make_zero (evita o "travamento" de ~1s no início).
-        use_copy = True
         cmd = [
-            ffmpeg, '-y',
-            '-ss', _format_time(start_time),
-            '-to', _format_time(end_time),
+            ffmpeg,
+            '-y',
+            '-ss',
+            _format_time(start_time),
+            '-to',
+            _format_time(end_time),
             '-noaccurate_seek',
-            '-i', input_path,
-            '-c:v', 'copy',
+            '-i',
+            input_path,
+            '-c:v',
+            'copy',
             *audio_args,
-            '-avoid_negative_ts', 'make_zero',
-            '-movflags', '+faststart',
-            '-max_muxing_queue_size', '1024',
+            '-avoid_negative_ts',
+            'make_zero',
+            '-movflags',
+            '+faststart',
+            '-max_muxing_queue_size',
+            '1024',
             part_path,
         ]
         candidates.append(('Stream copy', cmd))
     else:
         # Codec incompatível (AV1/VP9/HEVC): re-encode para H.264 + yuv420p.
-        use_copy = False
         codec_args, _ = _get_best_video_encoder()
         cmd = [
-            ffmpeg, '-y',
-            '-ss', _format_time(start_time),
-            '-to', _format_time(end_time),
-            '-i', input_path,
+            ffmpeg,
+            '-y',
+            '-ss',
+            _format_time(start_time),
+            '-to',
+            _format_time(end_time),
+            '-i',
+            input_path,
             *codec_args,
-            '-pix_fmt', 'yuv420p',
+            '-pix_fmt',
+            'yuv420p',
             *audio_args,
-            '-movflags', '+faststart',
-            '-max_muxing_queue_size', '1024',
+            '-movflags',
+            '+faststart',
+            '-max_muxing_queue_size',
+            '1024',
             part_path,
         ]
         candidates.append(('Re-encode', cmd))
@@ -518,6 +567,7 @@ def cut_video(
     for mode_label, cmd in candidates:
         if progress_callback:
             progress_callback(0, f'Iniciando corte ({mode_label})...')
+        logger.info('Corte: tentando modo "%s"', mode_label)
 
         process = subprocess.Popen(
             cmd,
@@ -546,7 +596,12 @@ def cut_video(
             if progress_callback:
                 match = time_pattern.search(line)
                 if match:
-                    h, m, s, ms = int(match[1]), int(match[2]), int(match[3]), int(match[4])
+                    h, m, s, ms = (
+                        int(match[1]),
+                        int(match[2]),
+                        int(match[3]),
+                        int(match[4]),
+                    )
                     current = h * 3600 + m * 60 + s + ms / 100
                     if duration > 0:
                         pct = min((current / duration) * 100, 99)
@@ -560,6 +615,12 @@ def cut_video(
             break
         # Pipeline (GPU) falhou → tenta o próximo candidato (CPU)
         last_error = ''.join(stderr_lines[-20:])
+        logger.warning(
+            'Corte: modo "%s" falhou (código %s): %s',
+            mode_label,
+            process.returncode,
+            last_error.strip()[:500],
+        )
         _remove_part()
 
     if last_error:
