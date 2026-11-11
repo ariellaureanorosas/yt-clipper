@@ -17,12 +17,16 @@ if base_dir not in sys.path:
 
 
 def main():
+    from core.bootstrap import bootstrap_config
     from core.logging_config import get_logger, setup_logging
     from ui.app_window import AppWindow
 
     log_path = setup_logging()
     logger = get_logger(__name__)
     logger.info('Aplicativo iniciado. Log em: %s', log_path)
+
+    # Detecta o hardware e aplica o perfil (encoder/download) antes de abrir a UI.
+    bootstrap_config()
 
     app = AppWindow()
     app.mainloop()

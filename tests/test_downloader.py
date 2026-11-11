@@ -62,3 +62,148 @@ def test_erro_anti_bot_vira_mensagem_orientativa():
 def test_remove_prefixo_error_duplicado():
     msg = _format_download_error(Exception('ERROR: algo deu errado'))
     assert not msg.startswith('ERROR:')
+
+
+# ── fetch_video_info / download_video (yt-dlp mockado) ────────
+
+
+class _FakeYDL:
+    """Substitui yt_dlp.YoutubeDL nos testes."""
+
+    info = {
+        'title': 'Meu vídeo',
+        'duration': 120,
+        'thumbnail': 'http://img',
+        'id': 'abc123',
+    }
+    erro = None
+    ultimo_opts = None
+
+    def __init__(self, opts):
+        type(self).ultimo_opts = opts
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        return False
+
+    def extract_info(self, url, download=False):
+        if type(self).erro:
+            raise type(self).erro
+        if type(self).info is None:
+            return None
+        return dict(type(self).info)
+
+    def download(self, urls):
+        if type(self).erro:
+            raise type(self).erro
+
+
+@pytest.fixture
+def fake_ydl(monkeypatch):
+    import core.downloader as downloader
+
+    _FakeYDL.erro = None
+    _FakeYDL.ultimo_opts = None
+    _FakeYDL.info = {
+        'title': 'Meu vídeo',
+        'duration': 120,
+        'thumbnail': 'http://img',
+        'id': 'abc123',
+    }
+    monkeypatch.setattr(downloader.yt_dlp, 'YoutubeDL', _FakeYDL)
+    return _FakeYDL
+
+
+def test_fetch_video_info_normaliza_campos(monkeypatch, fake_ydl):
+    import core.downloader as downloader
+    from core.config import AppConfig
+
+    monkeypatch.setattr(downloader, 'get_config', lambda: AppConfig())
+
+    info = downloader.fetch_video_info('https://youtu.be/abc123')
+
+    assert info == {
+        'title': 'Meu vídeo',
+        'duration': 120,
+        'thumbnail_url': 'http://img',
+        'id': 'abc123',
+    }
+    assert fake_ydl.ultimo_opts['socket_timeout'] == 60
+
+
+def test_fetch_video_info_trata_live_sem_duracao(monkeypatch, fake_ydl):
+    import core.downloader as downloader
+    from core.config import AppConfig
+
+    monkeypatch.setattr(downloader, 'get_config', lambda: AppConfig())
+    monkeypatch.setattr(
+        _FakeYDL, 'info', {'title': None, 'duration': None, 'id': 'live'}
+    )
+
+    info = downloader.fetch_video_info('https://youtu.be/live')
+
+    assert info['title'] == 'Sem título'
+    assert info['duration'] == 0
+
+
+def test_fetch_video_info_erro_quando_sem_dados(monkeypatch, fake_ydl):
+    import core.downloader as downloader
+    from core.config import AppConfig
+
+    monkeypatch.setattr(downloader, 'get_config', lambda: AppConfig())
+    monkeypatch.setattr(_FakeYDL, 'info', None)
+
+    with pytest.raises(ValueError):
+        downloader.fetch_video_info('https://youtu.be/abc')
+
+
+def test_download_video_retorna_arquivo_baixado(monkeypatch, tmp_path, fake_ydl):
+    import core.downloader as downloader
+    from core.config import AppConfig
+
+    monkeypatch.setattr(downloader, 'get_config', lambda: AppConfig())
+    monkeypatch.setattr(downloader, 'get_ffmpeg_path', lambda: 'ffmpeg')
+    (tmp_path / 'video.mp4').write_bytes(b'x')
+
+    caminho = downloader.download_video('https://youtu.be/abc', str(tmp_path), 'video')
+
+    assert caminho.endswith('video.mp4')
+
+
+def test_download_video_erro_quando_arquivo_nao_existe(monkeypatch, tmp_path, fake_ydl):
+    import core.downloader as downloader
+    from core.config import AppConfig
+
+    monkeypatch.setattr(downloader, 'get_config', lambda: AppConfig())
+    monkeypatch.setattr(downloader, 'get_ffmpeg_path', lambda: 'ffmpeg')
+
+    with pytest.raises(FileNotFoundError):
+        downloader.download_video('https://youtu.be/abc', str(tmp_path), 'sumiu')
+
+
+def test_download_video_converte_erro_em_cancelamento(monkeypatch, tmp_path, fake_ydl):
+    import threading
+
+    from yt_dlp.utils import DownloadCancelled
+
+    import core.downloader as downloader
+    from core.config import AppConfig
+
+    monkeypatch.setattr(downloader, 'get_config', lambda: AppConfig())
+    monkeypatch.setattr(downloader, 'get_ffmpeg_path', lambda: 'ffmpeg')
+
+    evento = threading.Event()
+    evento.set()
+    fake_ydl.erro = RuntimeError('interrompido')
+
+    with pytest.raises(DownloadCancelled):
+        downloader.download_video(
+            'https://youtu.be/abc', str(tmp_path), 'video', cancel_event=evento
+        )
+
+
+def test_erro_de_timeout_vira_mensagem_orientativa():
+    msg = _format_download_error(Exception('The read operation timed out'))
+    assert 'internet' in msg.lower() or 'conexão' in msg.lower()

@@ -255,6 +255,40 @@ class VideoToolboxStrategy:
 
 
 @dataclass(frozen=True, slots=True)
+class StreamCopyStrategy:
+    """Copia os pacotes sem re-encodar (mesma resolução + H.264).
+
+    É o caminho mais rápido: o corte leva segundos em vez de minutos.
+    """
+
+    @property
+    def label(self) -> str:
+        return 'Stream copy (sem re-encode)'
+
+    @property
+    def requires_hwaccel(self) -> bool:
+        return False
+
+    def build_cmd(self, base, filter_args, audio_args, output, input_path):
+        return [
+            *base,
+            '-noaccurate_seek',
+            '-i',
+            input_path,
+            '-c:v',
+            'copy',
+            *audio_args,
+            '-avoid_negative_ts',
+            'make_zero',
+            '-movflags',
+            '+faststart',
+            '-max_muxing_queue_size',
+            '1024',
+            output,
+        ]
+
+
+@dataclass(frozen=True, slots=True)
 class CPUStrategy:
     """Software encoding libx264 (fallback universal)."""
 
@@ -491,6 +525,15 @@ def _build_crop_filter(
     return ['-vf', filter_str]
 
 
+def _can_stream_copy(needs_scale: bool, video_codec: str) -> bool:
+    """Stream copy é possível quando não há redimensionamento e o codec é H.264.
+
+    Nesse caso o corte copia os pacotes sem re-encodar (praticamente
+    instantâneo). A aceleração por hardware só importa quando há re-encode.
+    """
+    return not needs_scale and video_codec == 'h264'
+
+
 def _verify_output(path: str) -> bool:
     if not path or not os.path.isfile(path) or os.path.getsize(path) == 0:
         return False
@@ -579,17 +622,14 @@ def cut_video(
     else:
         filter_args = []
 
-    # Stream copy se possível (mesma resolução + H.264)
+    # Stream copy quando não há mudança de resolução e o vídeo já é H.264:
+    # o corte fica praticamente instantâneo.
     video_codec = _get_video_codec(input_path)
-    can_stream_copy = (
-        not needs_scale
-        and video_codec == 'h264'
-        and not encoder_cfg.prefer_hardware  # Força re-encode se preferir HW
-    )
+    can_stream_copy = _can_stream_copy(needs_scale, video_codec)
 
     if can_stream_copy:
         logger.info('Usando stream copy (corte instantâneo)')
-        strategies = [CPUStrategy(label='Stream copy', requires_hwaccel=False)]
+        strategies = [StreamCopyStrategy()]
     else:
         logger.info(
             'Re-encode necessário: needs_scale=%s, codec=%s', needs_scale, video_codec
@@ -609,27 +649,7 @@ def cut_video(
             progress_callback(0, f'Iniciando corte ({strategy.label})...')
         logger.info('Corte: tentando estratégia "%s"', strategy.label)
 
-        if can_stream_copy:
-            cmd = [
-                *base,
-                '-noaccurate_seek',
-                '-i',
-                input_path,
-                '-c:v',
-                'copy',
-                *audio_args,
-                '-avoid_negative_ts',
-                'make_zero',
-                '-movflags',
-                '+faststart',
-                '-max_muxing_queue_size',
-                '1024',
-                part_path,
-            ]
-        else:
-            cmd = strategy.build_cmd(
-                base, filter_args, audio_args, part_path, input_path
-            )
+        cmd = strategy.build_cmd(base, filter_args, audio_args, part_path, input_path)
 
         logger.debug('FFmpeg cmd: %s', ' '.join(cmd))
 

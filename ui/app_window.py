@@ -11,6 +11,7 @@ import tempfile
 import threading
 import tkinter as tk
 import urllib.request
+from dataclasses import replace
 from io import BytesIO
 from tkinter import filedialog
 
@@ -18,13 +19,9 @@ import customtkinter as ctk
 from PIL import Image
 from yt_dlp.utils import DownloadCancelled
 
-from core.config import (
-    AppConfig,
-    EncoderConfig,
-    HardwareProfile,
-    get_config,
-    set_config,
-)
+from core import __version__
+from core.bootstrap import bootstrap_config
+from core.config import get_config, set_config
 from core.cutter import (
     check_ffmpeg_available,
     cut_video,
@@ -330,8 +327,13 @@ class AppWindow(ctk.CTk):
         self._tmp_dir = None
         self._output_part = None
         self._bar_indeterminate = False
-        # Guardar perfil original detectado (antes de qualquer toggle)
-        self._original_hardware_profile = get_config().hardware_profile
+
+        # Garante que o perfil de hardware detectado esteja aplicado antes de
+        # montar a UI (idempotente se main.py já chamou).
+        bootstrap_config()
+        cfg = get_config()
+        # Estado original do encoder, para restaurar ao desmarcar "Forçar CPU".
+        self._default_prefer_hardware = cfg.encoder.prefer_hardware
 
         self._build_ui()
         self._check_ffmpeg()
@@ -638,49 +640,17 @@ class AppWindow(ctk.CTk):
             pass
 
     def _on_force_cpu_toggle(self):
-        """Aplica mudança: forçar encoding por CPU."""
+        """Liga/desliga a aceleração por GPU sem perder as demais opções."""
         cfg = get_config()
-        prefer_hw = not self._force_cpu_var.get()
+        if self._force_cpu_var.get():
+            prefer_hw = False
+        else:
+            # Restaura exatamente a preferência detectada na inicialização.
+            prefer_hw = self._default_prefer_hardware
 
-        # Criar novo encoder config com prefer_hardware atualizado
-        profile = self._original_hardware_profile or HardwareProfile.MID_RANGE
-        base_encoder = EncoderConfig.for_profile(profile, low_memory_override=False)
-        new_encoder = EncoderConfig(
-            prefer_hardware=prefer_hw,
-            allow_fallback=base_encoder.allow_fallback,
-            crf=base_encoder.crf,
-            cq=base_encoder.cq,
-            preset_cpu=base_encoder.preset_cpu,
-            preset_gpu=base_encoder.preset_gpu,
-            low_memory_mode=base_encoder.low_memory_mode,
-            max_threads=base_encoder.max_threads,
-            thread_queue_size=base_encoder.thread_queue_size,
-            max_muxing_queue_size=base_encoder.max_muxing_queue_size,
-            pix_fmt=base_encoder.pix_fmt,
-            audio_codec=base_encoder.audio_codec,
-            audio_bitrate=base_encoder.audio_bitrate,
-            audio_copy_if_aac=base_encoder.audio_copy_if_aac,
-            movflags=base_encoder.movflags,
-        )
-
-        new_cfg = AppConfig(
-            hardware_profile=cfg.hardware_profile,
-            force_low_memory=cfg.force_low_memory,
-            assets_dir=cfg.assets_dir,
-            temp_dir=cfg.temp_dir,
-            log_dir=cfg.log_dir,
-            ffmpeg_timeout=cfg.ffmpeg_timeout,
-            ffprobe_timeout=cfg.ffprobe_timeout,
-            window_width=cfg.window_width,
-            window_min_height=cfg.window_min_height,
-            remember_window_size=cfg.remember_window_size,
-            download=cfg.download,
-            encoder=new_encoder,
-            log_level=cfg.log_level,
-            log_max_files=cfg.log_max_files,
-            log_max_bytes=cfg.log_max_bytes,
-        )
+        new_cfg = replace(cfg, encoder=replace(cfg.encoder, prefer_hardware=prefer_hw))
         set_config(new_cfg)
+
         logger.info('Forçar CPU encoding: %s', self._force_cpu_var.get())
         self.status_label.configure(
             text=f'Encoding por CPU: {"Forçado" if self._force_cpu_var.get() else "Automático (GPU se disponível)"}',
@@ -700,8 +670,9 @@ class AppWindow(ctk.CTk):
 {cap_summary}
 
 === CONFIGURAÇÃO ATUAL ===
+Versão: {__version__}
 Perfil de hardware: {cfg.hardware_profile.value if cfg.hardware_profile else 'Auto'}
-Modo baixa memória: {'Sim' if cfg.force_low_memory else 'Não'}
+Modo baixa memória: {'Sim' if cfg.encoder.low_memory_mode else 'Não'}
 Encoder preferido: {'Hardware (GPU)' if cfg.encoder.prefer_hardware else 'CPU (Software)'}
 Preset CPU: {cfg.encoder.preset_cpu}
 Preset GPU: {cfg.encoder.preset_gpu}

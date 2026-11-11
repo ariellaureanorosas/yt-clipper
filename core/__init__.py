@@ -1,5 +1,8 @@
 # Módulo core - lógica de download e corte
 
+__version__ = '1.1.0'
+
+from core.bootstrap import bootstrap_config
 from core.config import (
     AppConfig,
     DownloadConfig,
@@ -19,6 +22,9 @@ from core.hardware import (
 )
 
 __all__ = [
+    '__version__',
+    # bootstrap
+    'bootstrap_config',
     # config
     'get_config',
     'set_config',

@@ -1,0 +1,35 @@
+# Normaliza finais de linha e impede que arquivos binários sejam corrompidos.
+#
+# O padrão é LF (usado por todo o código Python). Arquivos que o Windows exige
+# em CRLF (.bat/.ps1) são marcados explicitamente, e binários ficam intactos.
+
+* text=auto eol=lf
+
+# Scripts do Windows precisam de CRLF para funcionar corretamente.
+*.bat  text eol=crlf
+*.cmd  text eol=crlf
+*.ps1  text eol=crlf
+
+# Binários: nunca converter.
+*.exe  binary
+*.dll  binary
+*.ico  binary
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.webp binary
+*.zip  binary
+*.mp4  binary
+*.mp3  binary
+*.wav  binary
+
+# Linguagens de dados/markdown são sempre LF.
+*.md   text eol=lf
+*.yml  text eol=lf
+*.yaml text eol=lf
+*.json text eol=lf
+
+# Evita ruído em diffs de arquivos gerados.
+*.spec       text
+.coverage    binary

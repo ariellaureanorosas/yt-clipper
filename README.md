@@ -1,12 +1,17 @@
 # 🎬 YouTube Clipper
 
 [![CI](https://github.com/ariellaureanorosas/yt-clipper/actions/workflows/ci.yml/badge.svg)](https://github.com/ariellaureanorosas/yt-clipper/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/ariellaureanorosas/yt-clipper?label=release)](https://github.com/ariellaureanorosas/yt-clipper/releases/latest)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
 
 Baixe vídeos do YouTube, corte trechos e converta para formato **vertical (9:16, para TikTok/Shorts/Reels)** ou **horizontal (16:9, para YouTube)** — tudo em um programa simples, com botões.
 
 > Você não precisa saber programar. Siga o passo a passo abaixo.
+>
+> **Requisitos mínimos:** Windows 10/11 (64-bit), 8 GB de RAM e conexão com a
+> internet na primeira execução. Em PCs com pouca memória o app ativa
+> automaticamente o modo econômico.
 
 ---
 
@@ -17,6 +22,12 @@ Baixe vídeos do YouTube, corte trechos e converta para formato **vertical (9:16
 - Precisa ter **internet** (na primeira instalação).
 
 ### Passo 1 — Baixar o programa
+
+**Opção mais rápida (recomendada):** abra a página de
+[**Releases**](https://github.com/ariellaureanorosas/yt-clipper/releases/latest),
+baixe `YouTubeClipper-<versão>.exe` e execute. Não precisa instalar Python.
+
+**Opção com código-fonte:**
 
 1. Nesta página, clique no botão verde **`<> Code`**.
 2. Clique em **`Download ZIP`**.
@@ -116,9 +127,9 @@ Todas são opcionais; os defaults funcionam sem configuração.
 
 | Variável | Padrão | Descrição |
 |----------|--------|-----------|
-| `YTCLIPPER_PROFILE` | auto | `high_end`, `mid_range`, `low_memory` ou `ci_cd` |
+| `YTCLIPPER_PROFILE` | auto | `high_end`, `mid_range`, `low_memory` ou `ci_cd`. Sem valor, o perfil é detectado pelo hardware |
 | `YTCLIPPER_LOW_MEMORY` | `false` | `true` força o modo de economia de memória |
-| `YTCLIPPER_PREFER_HW` | `true` | `false` força encoding por CPU |
+| `YTCLIPPER_PREFER_HW` | auto | `false` força encoding por CPU; `true` força tentativa de GPU |
 | `YTCLIPPER_DL_SOCKET_TIMEOUT` | `60` | Timeout de socket do download (segundos) |
 | `YTCLIPPER_DL_RETRIES` | `5` | Número de tentativas de download |
 | `YTCLIPPER_DL_CHUNK_SIZE` | `10485760` | Tamanho do chunk HTTP (bytes) |
@@ -126,20 +137,33 @@ Todas são opcionais; os defaults funcionam sem configuração.
 
 ### Rodar em modo desenvolvimento
 
+Requisitos: **Python 3.11+** (o CI usa 3.12).
+
 ```bash
+python -m venv .venv
+# Windows: .venv\Scripts\Activate.ps1  |  Linux/macOS: source .venv/bin/activate
 pip install -r requirements-dev.txt
+pre-commit install   # opcional, mas recomendado
 python main.py
 ```
 
 ### Testes e qualidade de código
 
 ```bash
-pytest                       # testes automatizados
+pytest                       # testes + cobertura (mínimo de 55% em core)
 ruff check .                 # lint (imports, nomes, erros)
 black core ui tests main.py  # formatação
+pre-commit run --all-files   # tudo de uma vez
 ```
 
-O repositório tem CI (GitHub Actions) que roda lint, formatação e testes a cada push/PR na branch `main`.
+O repositório tem CI (GitHub Actions) que roda lint, formatação e testes a cada
+push/PR na branch `main`. A branch é protegida: mudanças entram por Pull
+Request com os checks **Lint e formatação** e **Testes** verdes.
+
+Contribuições são bem-vindas — leia o [`CONTRIBUTING.md`](CONTRIBUTING.md) e o
+[`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md). Para falhas de segurança, siga o
+[`SECURITY.md`](SECURITY.md) (não abra issue pública). O histórico de mudanças
+fica no [`CHANGELOG.md`](CHANGELOG.md).
 
 ### Logs
 
@@ -165,23 +189,38 @@ O corte por *stream copy* usa `-noaccurate_seek` + `-avoid_negative_ts make_zero
 
 ```
 yt-clipper/
-├── main.py              # Ponto de entrada
+├── main.py                 # Ponto de entrada (aplica o perfil e abre a UI)
 ├── ui/
-│   └── app_window.py    # Interface gráfica
+│   └── app_window.py       # Interface gráfica (CustomTkinter)
 ├── core/
-│   ├── downloader.py    # Download via yt-dlp
-│   ├── cutter.py        # Corte/conversão via ffmpeg
-│   ├── processes.py     # Registro/cancelamento de subprocessos
-│   └── logging_config.py # Logging em arquivo
-├── tests/               # Testes automatizados (pytest)
-├── assets/              # ffmpeg/ffprobe (baixados automaticamente na 1ª execução)
+│   ├── __init__.py         # Versão (__version__) e exportações públicas
+│   ├── config.py           # Configuração tipada e imutável + perfis
+│   ├── hardware.py         # Detecção de GPU/RAM/encoders (cacheada)
+│   ├── bootstrap.py        # Aplica o perfil detectado na inicialização
+│   ├── downloader.py       # Download via yt-dlp
+│   ├── cutter.py           # Corte/conversão via ffmpeg (Strategy Pattern)
+│   ├── processes.py        # Registro/cancelamento de subprocessos
+│   └── logging_config.py   # Logging em arquivo
+├── tests/                  # Testes automatizados (pytest + coverage)
+├── .github/
+│   ├── workflows/ci.yml    # Lint, formatação e testes
+│   ├── workflows/release.yml # Build + Release em tags v*
+│   ├── ISSUE_TEMPLATE/     # Templates de bug/feature
+│   ├── dependabot.yml      # Atualizações de dependências
+│   └── pull_request_template.md
+├── assets/                 # ffmpeg/ffprobe (baixados na 1ª execução)
 ├── icons/
-│   └── app.ico          # Ícone do aplicativo
-├── instalar.bat         # Instalador para usuários (compila + atalho)
+│   └── app.ico             # Ícone do aplicativo
+├── instalar.bat            # Instalador para usuários (compila + atalho)
 ├── requirements.txt
 ├── requirements-dev.txt
-├── pyproject.toml       # Configuração de lint/format/testes
+├── pyproject.toml          # Configuração de lint/format/testes/cobertura
+├── .pre-commit-config.yaml
 ├── build.spec
+├── CHANGELOG.md
+├── CONTRIBUTING.md
+├── CODE_OF_CONDUCT.md
+├── SECURITY.md
 ├── LICENSE
 └── README.md
 ```

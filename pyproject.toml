@@ -31,6 +31,25 @@ extend-exclude = '''
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-q"
+addopts = "-q --cov=core --cov-report=term-missing"
 # Permite importar "core" e "ui" a partir da raiz do projeto.
 pythonpath = ["."]
+
+[tool.coverage.run]
+# A UI (Tkinter) não é coberta por testes unitários; medimos o núcleo lógico.
+source = ["core"]
+branch = true
+omit = [
+    "core/__init__.py",
+]
+
+[tool.coverage.report]
+# Falha o CI se a cobertura do núcleo cair abaixo do mínimo acordado.
+fail_under = 55
+show_missing = true
+skip_covered = true
+exclude_also = [
+    "if __name__ == .__main__.:",
+    "raise NotImplementedError",
+]
+

@@ -347,10 +347,11 @@ def get_hardware_capabilities() -> HardwareCapabilities:
 
 
 def invalidate_hardware_cache() -> None:
-    """Invalida cache (útil após instalação de drivers)."""
-    global _HARDWARE_CACHE
+    """Invalida cache (útil após instalação de drivers ou em testes)."""
+    global _HARDWARE_CACHE, _capabilities
     with _CACHE_LOCK:
-        _HARDWARE_CACHE.clear()
+        _HARDWARE_CACHE = {}
+        _capabilities = None
 
 
 # Auto-detectar na importação (lazy)

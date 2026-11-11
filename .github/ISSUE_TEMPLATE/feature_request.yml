@@ -1,0 +1,42 @@
+name: ✨ Sugerir uma funcionalidade
+description: Ideia para tornar o programa melhor.
+title: '[Feature]: '
+labels: ['enhancement']
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Antes de abrir, verifique se a ideia já não existe nas issues.
+
+  - type: textarea
+    id: problema
+    attributes:
+      label: Qual problema isso resolve?
+      description: Descreva a dor ou limitação atual.
+      placeholder: Hoje preciso cortar vários trechos do mesmo vídeo um por um...
+    validations:
+      required: true
+
+  - type: textarea
+    id: solucao
+    attributes:
+      label: Solução proposta
+      description: Como você imagina que deveria funcionar na interface?
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternativas
+    attributes:
+      label: Alternativas consideradas
+      description: Outras formas de resolver o problema ou soluções que já existem.
+    validations:
+      required: false
+
+  - type: textarea
+    id: contexto
+    attributes:
+      label: Contexto adicional
+      description: Capturas de tela, exemplos de outros apps, etc.
+    validations:
+      required: false

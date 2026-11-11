@@ -6,7 +6,7 @@ Baseado em 12-factor app: config via ambiente, defaults sensatos, validação.
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from enum import Enum
 from pathlib import Path
 from typing import Self
@@ -201,12 +201,19 @@ class AppConfig:
 
     @classmethod
     def load(cls) -> Self:
-        """Carrega configuração do ambiente + defaults."""
-        # Hardware profile via env
-        profile_env = os.getenv("YTCLIPPER_PROFILE", "").lower()
-        profile = None
-        if profile_env in HardwareProfile.__members__.values():
-            profile = HardwareProfile(profile_env)
+        """Carrega configuração do ambiente + defaults.
+
+        Se ``YTCLIPPER_PROFILE`` estiver definido, o perfil já é aplicado aqui
+        (download + encoder). Caso contrário, o perfil fica ``None`` e é
+        preenchido depois por :func:`core.bootstrap.bootstrap_config` com o
+        hardware detectado.
+        """
+        # Hardware profile via env (valor inválido é ignorado).
+        profile_env = os.getenv("YTCLIPPER_PROFILE", "").strip().lower()
+        try:
+            profile = HardwareProfile(profile_env) if profile_env else None
+        except ValueError:
+            profile = None
 
         # Low memory override
         force_low_mem = os.getenv("YTCLIPPER_LOW_MEMORY", "").lower() in (
@@ -215,6 +222,9 @@ class AppConfig:
             "yes",
             "on",
         )
+
+        # Override explícito de aceleração por hardware (None = padrão do perfil)
+        prefer_hw_env = os.getenv("YTCLIPPER_PREFER_HW")
 
         # Diretórios
         base_dir = Path(__file__).parent.parent
@@ -246,7 +256,7 @@ class AppConfig:
 
         # Encoder config
         encoder = EncoderConfig(
-            prefer_hardware=os.getenv("YTCLIPPER_PREFER_HW", "true").lower() != "false",
+            prefer_hardware=True,  # ajustado pelo perfil / env abaixo
             allow_fallback=os.getenv("YTCLIPPER_ALLOW_FALLBACK", "true").lower()
             != "false",
             crf=int(os.getenv("YTCLIPPER_CRF", "23")),
@@ -257,7 +267,7 @@ class AppConfig:
             audio_bitrate=os.getenv("YTCLIPPER_AUDIO_BITRATE", "192k"),
         )
 
-        return cls(
+        config = cls(
             hardware_profile=profile,
             force_low_memory=force_low_mem,
             assets_dir=assets_dir,
@@ -268,19 +278,30 @@ class AppConfig:
             log_level=os.getenv("YTCLIPPER_LOG_LEVEL", "INFO"),
         )
 
+        # Aplica os presets do perfil escolhido por ambiente. Sem perfil
+        # explícito, o bootstrap aplica o perfil detectado do hardware.
+        if profile is not None:
+            config = config.with_profile(profile)
+
+        # YTCLIPPER_PREFER_HW tem a palavra final sobre o perfil.
+        if prefer_hw_env is not None and prefer_hw_env.strip():
+            config = replace(
+                config,
+                encoder=replace(
+                    config.encoder,
+                    prefer_hardware=prefer_hw_env.strip().lower() != "false",
+                ),
+            )
+
+        return config
+
     def with_profile(self, profile: HardwareProfile) -> Self:
         """Retorna nova config com perfil aplicado (imutável)."""
-        download = DownloadConfig.for_profile(profile)
-        encoder = EncoderConfig.for_profile(profile, self.force_low_memory)
-        return AppConfig(
+        return replace(
+            self,
             hardware_profile=profile,
-            force_low_memory=self.force_low_memory,
-            assets_dir=self.assets_dir,
-            temp_dir=self.temp_dir,
-            log_dir=self.log_dir,
-            download=download,
-            encoder=encoder,
-            log_level=self.log_level,
+            download=DownloadConfig.for_profile(profile),
+            encoder=EncoderConfig.for_profile(profile, self.force_low_memory),
         )
 
 
