@@ -53,20 +53,23 @@ jobs:
           Get-Content "$asset.sha256"
 
       - name: Publicar Release
-        uses: softprops/action-gh-release@v2
-        with:
-          name: YouTube Clipper ${{ github.ref_name }}
-          generate_release_notes: true
-          fail_on_unmatched_files: true
-          files: |
-            YouTubeClipper-*.exe
-            YouTubeClipper-*.exe.sha256
-          body: |
-            ## YouTube Clipper ${{ github.ref_name }}
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $tag = '${{ github.ref_name }}'
+          $notes = @"
+          ## YouTube Clipper $tag
 
-            Baixe o arquivo `YouTubeClipper-${{ github.ref_name }}.exe` abaixo
-            (remova o prefixo `v` do nome) e execute. O checksum SHA-256 está
-            disponível em `.sha256`.
+          Baixe o arquivo `YouTubeClipper-$($tag.TrimStart('v')).exe` abaixo e execute.
+          O checksum SHA-256 está disponível no arquivo `.sha256`.
 
-            Consulte o [CHANGELOG](https://github.com/ariellaureanorosas/yt-clipper/blob/main/CHANGELOG.md)
-            para ver o que mudou.
+          Consulte o [CHANGELOG](https://github.com/ariellaureanorosas/yt-clipper/blob/main/CHANGELOG.md)
+          para ver o que mudou.
+          "@
+          gh release create $tag `
+            --title "YouTube Clipper $tag" `
+            --generate-notes `
+            --notes $notes `
+            --verify-tag `
+            (Get-ChildItem YouTubeClipper-*.exe, YouTubeClipper-*.exe.sha256 | ForEach-Object { $_.FullName })
