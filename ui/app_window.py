@@ -16,13 +16,18 @@ import customtkinter as ctk
 from PIL import Image
 from yt_dlp.utils import DownloadCancelled
 
-from core.cutter import check_ffmpeg_available, cut_video, download_ffmpeg
+import platform
+import sys
+
+from core.config import get_config, set_config, HardwareProfile, EncoderConfig, AppConfig
+from core.cutter import check_ffmpeg_available, cut_video, download_ffmpeg, get_ffmpeg_path, get_ffprobe_path
 from core.downloader import (
     _format_download_error,
     download_video,
     fetch_video_info,
     is_valid_youtube_url,
 )
+from core.hardware import get_cached_capabilities
 from core.logging_config import get_logger
 from core.processes import ProcessingCancelled, cleanup_for_dir
 
@@ -314,6 +319,8 @@ class AppWindow(ctk.CTk):
         self._tmp_dir = None
         self._output_part = None
         self._bar_indeterminate = False
+        # Guardar perfil original detectado (antes de qualquer toggle)
+        self._original_hardware_profile = get_config().hardware_profile
 
         self._build_ui()
         self._check_ffmpeg()
@@ -513,6 +520,35 @@ class AppWindow(ctk.CTk):
         )
         self.filename_entry.pack(side='left', fill='x', expand=True, padx=(8, 0))
 
+        # === SEÇÃO: OPÇÕES AVANÇADAS ===
+        advanced_frame = ctk.CTkFrame(self.scroll_frame)
+        advanced_frame.pack(fill='x', pady=(0, 8))
+
+        ctk.CTkLabel(advanced_frame, text='Opções avançadas:', anchor='w').pack(
+            fill='x', padx=12, pady=(8, 4)
+        )
+
+        # Checkbox forçar CPU encoding
+        cfg = get_config()
+        self._force_cpu_var = ctk.BooleanVar(value=not cfg.encoder.prefer_hardware)
+        self.force_cpu_check = ctk.CTkCheckBox(
+            advanced_frame,
+            text='Forçar encoding por CPU (desativar aceleração GPU — mais estável em PCs com pouca RAM)',
+            variable=self._force_cpu_var,
+            command=self._on_force_cpu_toggle,
+        )
+        self.force_cpu_check.pack(anchor='w', padx=12, pady=(0, 8))
+
+        # Botão de diagnóstico
+        diag_frame = ctk.CTkFrame(advanced_frame, fg_color='transparent')
+        diag_frame.pack(fill='x', padx=12, pady=(0, 8))
+        ctk.CTkButton(
+            diag_frame,
+            text='Ver Diagnóstico do Sistema',
+            command=self._show_system_diagnostic,
+            height=32,
+        ).pack(side='left')
+
         # === SEÇÃO: PROGRESSO ===
         progress_frame = ctk.CTkFrame(self.scroll_frame)
         progress_frame.pack(fill='x', pady=(0, 8))
@@ -589,6 +625,112 @@ class AppWindow(ctk.CTk):
             )
         except (ValueError, IndexError):
             pass
+
+    def _on_force_cpu_toggle(self):
+        """Aplica mudança: forçar encoding por CPU."""
+        cfg = get_config()
+        prefer_hw = not self._force_cpu_var.get()
+        
+        # Criar novo encoder config com prefer_hardware atualizado
+        profile = self._original_hardware_profile or HardwareProfile.MID_RANGE
+        base_encoder = EncoderConfig.for_profile(profile, low_memory_override=False)
+        new_encoder = EncoderConfig(
+            prefer_hardware=prefer_hw,
+            allow_fallback=base_encoder.allow_fallback,
+            crf=base_encoder.crf,
+            cq=base_encoder.cq,
+            preset_cpu=base_encoder.preset_cpu,
+            preset_gpu=base_encoder.preset_gpu,
+            low_memory_mode=base_encoder.low_memory_mode,
+            max_threads=base_encoder.max_threads,
+            thread_queue_size=base_encoder.thread_queue_size,
+            max_muxing_queue_size=base_encoder.max_muxing_queue_size,
+            pix_fmt=base_encoder.pix_fmt,
+            audio_codec=base_encoder.audio_codec,
+            audio_bitrate=base_encoder.audio_bitrate,
+            audio_copy_if_aac=base_encoder.audio_copy_if_aac,
+            movflags=base_encoder.movflags,
+        )
+        
+        new_cfg = AppConfig(
+            hardware_profile=cfg.hardware_profile,
+            force_low_memory=cfg.force_low_memory,
+            assets_dir=cfg.assets_dir,
+            temp_dir=cfg.temp_dir,
+            log_dir=cfg.log_dir,
+            ffmpeg_timeout=cfg.ffmpeg_timeout,
+            ffprobe_timeout=cfg.ffprobe_timeout,
+            window_width=cfg.window_width,
+            window_min_height=cfg.window_min_height,
+            remember_window_size=cfg.remember_window_size,
+            download=cfg.download,
+            encoder=new_encoder,
+            log_level=cfg.log_level,
+            log_max_files=cfg.log_max_files,
+            log_max_bytes=cfg.log_max_bytes,
+        )
+        set_config(new_cfg)
+        logger.info('Forçar CPU encoding: %s', self._force_cpu_var.get())
+        self.status_label.configure(
+            text=f'Encoding por CPU: {"Forçado" if self._force_cpu_var.get() else "Automático (GPU se disponível)"}',
+            text_color='orange'
+        )
+
+    def _show_system_diagnostic(self):
+        """Mostra janela com diagnóstico completo do hardware."""
+        caps = get_cached_capabilities()
+        cfg = get_config()
+        
+        cap_summary = caps.summary()
+        
+        diag_text = f"""
+=== DIAGNÓSTICO DO SISTEMA ===
+
+{cap_summary}
+
+=== CONFIGURAÇÃO ATUAL ===
+Perfil de hardware: {cfg.hardware_profile.value if cfg.hardware_profile else 'Auto'}
+Modo baixa memória: {'Sim' if cfg.force_low_memory else 'Não'}
+Encoder preferido: {'Hardware (GPU)' if cfg.encoder.prefer_hardware else 'CPU (Software)'}
+Preset CPU: {cfg.encoder.preset_cpu}
+Preset GPU: {cfg.encoder.preset_gpu}
+CRF/CQ: {cfg.encoder.crf}/{cfg.encoder.cq}
+Threads máximas: {cfg.encoder.max_threads or 'Auto'}
+
+=== DOWNLOAD ===
+Timeout socket: {cfg.download.socket_timeout}s
+Retries: {cfg.download.retries}
+Chunk size: {cfg.download.http_chunk_size // 1024 // 1024} MB
+Concurrent fragments: {cfg.download.concurrent_fragment_downloads}
+
+=== AMBIENTE ===
+Python: {sys.version.split()[0]}
+Platform: {platform.platform()}
+FFmpeg: {get_ffmpeg_path()}
+FFprobe: {get_ffprobe_path()}
+"""
+        
+        # Janela modal com texto selecionável
+        win = ctk.CTkToplevel(self)
+        win.title('Diagnóstico do Sistema')
+        win.geometry('700x600')
+        win.transient(self)
+        win.grab_set()
+        
+        txt = ctk.CTkTextbox(win, wrap='none', font=ctk.CTkFont(family='Consolas', size=11))
+        txt.pack(fill='both', expand=True, padx=12, pady=12)
+        txt.insert('1.0', diag_text.strip())
+        txt.configure(state='disabled')
+        
+        btn_frame = ctk.CTkFrame(win, fg_color='transparent')
+        btn_frame.pack(fill='x', padx=12, pady=(0, 12))
+        ctk.CTkButton(
+            btn_frame, text='Copiar', 
+            command=lambda: self.clipboard_append(diag_text)
+        ).pack(side='left')
+        ctk.CTkButton(
+            btn_frame, text='Fechar', command=win.destroy
+        ).pack(side='right')
 
     # ── Outros callbacks ───────────────────────────────────
 

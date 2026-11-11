@@ -1,16 +1,21 @@
 """
 Módulo de download e extração de informações de vídeos do YouTube.
 Usa yt-dlp como biblioteca Python.
+Com timeouts configuráveis, retry exponencial e resiliência a rede instável.
 """
+
+from __future__ import annotations
 
 import os
 import re
 import threading
 import time
+from typing import Callable
 
 import yt_dlp
 from yt_dlp.utils import DownloadCancelled
 
+from core.config import get_config
 from core.cutter import get_ffmpeg_path
 from core.logging_config import get_logger
 
@@ -60,6 +65,12 @@ def _format_download_error(e: Exception) -> str:
             'O YouTube bloqueou o acesso (anti-bot). '
             'Tente novamente mais tarde ou escolha outro video.'
         )
+    # Timeout errors
+    if 'timed out' in msg.lower() or 'timeout' in msg.lower():
+        return (
+            'Tempo de conexão esgotado. Verifique sua internet e tente novamente. '
+            'Vídeos longos podem precisar de mais tempo.'
+        )
     return msg[:100]
 
 
@@ -68,12 +79,14 @@ def fetch_video_info(url: str) -> dict:
     Busca informações do vídeo sem baixar.
     Retorna dict com: title, duration, thumbnail_url, id
     """
+    config = get_config()
     opts = {
         'quiet': True,
         'no_warnings': True,
         'skip_download': True,
+        **config.download.ydl_params,
     }
-    logger.debug('Buscando informações do vídeo: %s', url)
+    logger.debug('Buscando info: %s (timeout=%ss)', url, config.download.socket_timeout)
     with yt_dlp.YoutubeDL(opts) as ydl:
         info = ydl.extract_info(url, download=False)
 
@@ -95,7 +108,7 @@ def download_video(
     url: str,
     output_path: str,
     filename: str,
-    progress_callback=None,
+    progress_callback: Callable[[float, str], None] | None = None,
     start_time: float = None,
     end_time: float = None,
     cancel_event: threading.Event = None,
@@ -110,6 +123,7 @@ def download_video(
     do vídeo inteiro (download por trecho via yt-dlp é ~120x mais lento); o
     recorte exato é feito depois pelo cut_video.
     """
+    config = get_config()
     output_template = os.path.join(output_path, f'{filename}.%(ext)s')
 
     # Garantir que o yt-dlp encontre o ffmpeg (necessário para o merge das streams
@@ -228,6 +242,7 @@ def download_video(
         'quiet': True,
         'no_warnings': True,
         'noprogress': True,
+        **config.download.ydl_params,
     }
 
     # Informar ao yt-dlp onde está o ffmpeg (diretório de assets/ ou do PATH)
