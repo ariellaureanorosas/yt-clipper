@@ -4,12 +4,12 @@
 
 # Testes
 pytest>=9.2.0
-pytest-cov>=6.0
+pytest-cov>=7.1.0
 
 # Lint e formatação
-ruff>=0.6
-black>=24.0
-pre-commit>=3.7
+ruff>=0.17.4
+black>=26.10.1
+pre-commit>=4.7.0
 
 # Empacotamento (usado pelo instalar.bat / build.spec)
 pyinstaller>=6.22.3
