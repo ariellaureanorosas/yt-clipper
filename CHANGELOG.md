@@ -56,6 +56,8 @@ projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
 ## [1.0.0] - 2026-10-01
 
+Versão inicial.
+
 ### Adicionado
 
 - Download de vídeos do YouTube com `yt-dlp`, incluindo Shorts, lives e links
@@ -69,5 +71,4 @@ projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 - Cancelamento seguro de subprocessos e limpeza de arquivos temporários.
 - Logs em `%LOCALAPPDATA%\YouTubeClipper\logs\app.log`.
 
-[1.1.0]: https://github.com/ariellaureanorosas/yt-clipper/compare/v1.0.0...v1.1.0
-[1.0.0]: https://github.com/ariellaureanorosas/yt-clipper/releases/tag/v1.0.0
+[1.1.0]: https://github.com/ariellaureanorosas/yt-clipper/releases/tag/v1.1.0
