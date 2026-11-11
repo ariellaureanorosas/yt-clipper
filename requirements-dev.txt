@@ -3,7 +3,7 @@
 -r requirements.txt
 
 # Testes
-pytest>=8.0
+pytest>=9.2.0
 
 # Lint e formatação
 ruff>=0.6
