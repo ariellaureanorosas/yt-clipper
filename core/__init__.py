@@ -1,21 +1,21 @@
 # Módulo core - lógica de download e corte
 
 from core.config import (
-    get_config,
-    set_config,
-    reset_config,
     AppConfig,
     DownloadConfig,
     EncoderConfig,
-    HardwareProfile,
     GPUVendor,
+    HardwareProfile,
+    get_config,
+    reset_config,
+    set_config,
 )
 from core.hardware import (
+    HardwareCapabilities,
+    detect_hardware,
     get_cached_capabilities,
     get_hardware_capabilities,
-    detect_hardware,
     invalidate_hardware_cache,
-    HardwareCapabilities,
 )
 
 __all__ = [

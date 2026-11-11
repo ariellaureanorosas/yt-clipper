@@ -4,7 +4,9 @@ Interface gráfica com customtkinter.
 """
 
 import os
+import platform
 import re
+import sys
 import tempfile
 import threading
 import tkinter as tk
@@ -16,11 +18,20 @@ import customtkinter as ctk
 from PIL import Image
 from yt_dlp.utils import DownloadCancelled
 
-import platform
-import sys
-
-from core.config import get_config, set_config, HardwareProfile, EncoderConfig, AppConfig
-from core.cutter import check_ffmpeg_available, cut_video, download_ffmpeg, get_ffmpeg_path, get_ffprobe_path
+from core.config import (
+    AppConfig,
+    EncoderConfig,
+    HardwareProfile,
+    get_config,
+    set_config,
+)
+from core.cutter import (
+    check_ffmpeg_available,
+    cut_video,
+    download_ffmpeg,
+    get_ffmpeg_path,
+    get_ffprobe_path,
+)
 from core.downloader import (
     _format_download_error,
     download_video,
@@ -630,7 +641,7 @@ class AppWindow(ctk.CTk):
         """Aplica mudança: forçar encoding por CPU."""
         cfg = get_config()
         prefer_hw = not self._force_cpu_var.get()
-        
+
         # Criar novo encoder config com prefer_hardware atualizado
         profile = self._original_hardware_profile or HardwareProfile.MID_RANGE
         base_encoder = EncoderConfig.for_profile(profile, low_memory_override=False)
@@ -651,7 +662,7 @@ class AppWindow(ctk.CTk):
             audio_copy_if_aac=base_encoder.audio_copy_if_aac,
             movflags=base_encoder.movflags,
         )
-        
+
         new_cfg = AppConfig(
             hardware_profile=cfg.hardware_profile,
             force_low_memory=cfg.force_low_memory,
@@ -673,16 +684,16 @@ class AppWindow(ctk.CTk):
         logger.info('Forçar CPU encoding: %s', self._force_cpu_var.get())
         self.status_label.configure(
             text=f'Encoding por CPU: {"Forçado" if self._force_cpu_var.get() else "Automático (GPU se disponível)"}',
-            text_color='orange'
+            text_color='orange',
         )
 
     def _show_system_diagnostic(self):
         """Mostra janela com diagnóstico completo do hardware."""
         caps = get_cached_capabilities()
         cfg = get_config()
-        
+
         cap_summary = caps.summary()
-        
+
         diag_text = f"""
 === DIAGNÓSTICO DO SISTEMA ===
 
@@ -709,28 +720,27 @@ Platform: {platform.platform()}
 FFmpeg: {get_ffmpeg_path()}
 FFprobe: {get_ffprobe_path()}
 """
-        
+
         # Janela modal com texto selecionável
         win = ctk.CTkToplevel(self)
         win.title('Diagnóstico do Sistema')
         win.geometry('700x600')
         win.transient(self)
         win.grab_set()
-        
-        txt = ctk.CTkTextbox(win, wrap='none', font=ctk.CTkFont(family='Consolas', size=11))
+
+        txt = ctk.CTkTextbox(
+            win, wrap='none', font=ctk.CTkFont(family='Consolas', size=11)
+        )
         txt.pack(fill='both', expand=True, padx=12, pady=12)
         txt.insert('1.0', diag_text.strip())
         txt.configure(state='disabled')
-        
+
         btn_frame = ctk.CTkFrame(win, fg_color='transparent')
         btn_frame.pack(fill='x', padx=12, pady=(0, 12))
         ctk.CTkButton(
-            btn_frame, text='Copiar', 
-            command=lambda: self.clipboard_append(diag_text)
+            btn_frame, text='Copiar', command=lambda: self.clipboard_append(diag_text)
         ).pack(side='left')
-        ctk.CTkButton(
-            btn_frame, text='Fechar', command=win.destroy
-        ).pack(side='right')
+        ctk.CTkButton(btn_frame, text='Fechar', command=win.destroy).pack(side='right')
 
     # ── Outros callbacks ───────────────────────────────────
 

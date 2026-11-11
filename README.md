@@ -73,6 +73,19 @@ Reinicie o computador e rode o **`instalar.bat`** novamente. Se o erro persistir
 ### "Não foi possível baixar o ffmpeg"
 Isso acontece sem internet ou com rede bloqueada. Tente de novo mais tarde ou verifique sua conexão.
 
+### Erro de download: "The read operation timed out"
+A conexão com o YouTube ficou lenta ou instável. O programa já tenta novamente até 5 vezes automaticamente. Se continuar:
+1. Teste a internet e desative VPN/proxy.
+2. Evite horários de pico ou vídeos muito longos.
+3. Para redes muito instáveis, aumente os limites pelas variáveis de ambiente (`YTCLIPPER_DL_RETRIES`, `YTCLIPPER_DL_SOCKET_TIMEOUT`) — veja a seção de desenvolvedores.
+
+### Erro ao cortar vídeo (`ffmpeg code ...`) em PCs com 8 GB de RAM
+Isso normalmente é **falta de memória** (o Windows encerra o ffmpeg). No computador do usuário:
+1. Feche navegador, jogos e outros programas pesados antes de processar.
+2. Em **Opções avançadas**, marque **"Forçar encoding por CPU"** — evita tentativas de GPU incompatíveis (ex.: AMD sem NVENC) e usa o modo econômico de memória.
+3. Prefira trechos mais curtos e o formato **Horizontal** quando o vídeo original já for 16:9.
+4. Clique em **"Ver Diagnóstico do Sistema"** e envie o texto junto do log ao reportar o problema.
+
 ### O programa não abre
 Feche e abra de novo. Se continuar, rode o **`instalar.bat`** novamente (ele conserta tudo).
 
@@ -80,7 +93,32 @@ Feche e abra de novo. Se continuar, rode o **`instalar.bat`** novamente (ele con
 
 ## 💻 Informações para desenvolvedores
 
-**Tecnologias:** Python + CustomTkinter (interface), yt-dlp (download), ffmpeg (corte/conversão).
+**Tecnologias:** Python 3.11+ + CustomTkinter (interface), yt-dlp (download), ffmpeg (corte/conversão).
+
+O app detecta o hardware na inicialização (GPU/encoders disponíveis, RAM, CPU) e escolhe o melhor pipeline de encoding, com fallback automático para CPU. Um modo de **economia de memória** (threads e filas reduzidas) é aplicado automaticamente quando há pouca RAM disponível.
+
+### Perfis de hardware
+
+| Perfil | Quando é usado | Efeito |
+|--------|----------------|--------|
+| `high_end` | 32 GB+ RAM e GPU dedicada | Presets mais rápidos/qualidade, paralelismo alto |
+| `mid_range` | 16 GB+ RAM | Equilíbrio padrão |
+| `low_memory` | Menos de 16 GB RAM / pouca RAM livre | Threads=2, filas menores, chunk de download menor |
+| `ci_cd` | Testes/CI | Determinístico, sem depender de GPU |
+
+### Configuração por variáveis de ambiente
+
+Todas são opcionais; os defaults funcionam sem configuração.
+
+| Variável | Padrão | Descrição |
+|----------|--------|-----------|
+| `YTCLIPPER_PROFILE` | auto | `high_end`, `mid_range`, `low_memory` ou `ci_cd` |
+| `YTCLIPPER_LOW_MEMORY` | `false` | `true` força o modo de economia de memória |
+| `YTCLIPPER_PREFER_HW` | `true` | `false` força encoding por CPU |
+| `YTCLIPPER_DL_SOCKET_TIMEOUT` | `60` | Timeout de socket do download (segundos) |
+| `YTCLIPPER_DL_RETRIES` | `5` | Número de tentativas de download |
+| `YTCLIPPER_DL_CHUNK_SIZE` | `10485760` | Tamanho do chunk HTTP (bytes) |
+| `YTCLIPPER_LOG_LEVEL` | `INFO` | `DEBUG`, `INFO`, `WARNING`, `ERROR` |
 
 ### Rodar em modo desenvolvimento
 

@@ -5,15 +5,12 @@ Suporta: Windows (WMI), Linux (/proc, lspci, clinfo), macOS (system_profiler).
 
 from __future__ import annotations
 
-import functools
 import platform
-import re
 import subprocess
 import sys
 import threading
 import time
 from dataclasses import dataclass
-from typing import Final
 
 import psutil
 
@@ -31,6 +28,7 @@ _CACHE_LOCK = threading.Lock()
 @dataclass(frozen=True, slots=True)
 class HardwareCapabilities:
     """Capacidades de hardware detectadas."""
+
     has_nvenc: bool
     has_cuda: bool
     has_quicksync: bool
@@ -44,7 +42,7 @@ class HardwareCapabilities:
     cpu_threads: int
     is_low_memory: bool
     profile: HardwareProfile
-    
+
     def best_encoder_order(self) -> list[str]:
         """Ordem de preferência de encoders baseada no hardware."""
         order = []
@@ -58,7 +56,7 @@ class HardwareCapabilities:
             order.append("h264_videotoolbox")
         order.append("libx264")  # Sempre disponível como fallback
         return order
-    
+
     def summary(self) -> str:
         parts = [
             f"GPU: {self.gpu_name} ({self.gpu_vendor.value})",
@@ -67,10 +65,14 @@ class HardwareCapabilities:
             f"Profile: {self.profile.value}",
         ]
         hw_accel = []
-        if self.has_nvenc: hw_accel.append("NVENC")
-        if self.has_quicksync: hw_accel.append("QuickSync")
-        if self.has_vaapi: hw_accel.append("VAAPI")
-        if self.has_videotoolbox: hw_accel.append("VideoToolbox")
+        if self.has_nvenc:
+            hw_accel.append("NVENC")
+        if self.has_quicksync:
+            hw_accel.append("QuickSync")
+        if self.has_vaapi:
+            hw_accel.append("VAAPI")
+        if self.has_videotoolbox:
+            hw_accel.append("VideoToolbox")
         if hw_accel:
             parts.append(f"HW Accel: {', '.join(hw_accel)}")
         else:
@@ -101,10 +103,11 @@ def _run_cmd(cmd: list[str], timeout: int = 10) -> tuple[int, str, str]:
 def _detect_gpu_windows() -> tuple[GPUVendor, str]:
     """Detecta GPU no Windows via WMI."""
     # Tentar wmic (legado mas confiável)
-    code, out, _ = _run_cmd([
-        'wmic', 'path', 'win32_VideoController', 'get', 'name', '/format:csv'
-    ], timeout=15)
-    
+    code, out, _ = _run_cmd(
+        ['wmic', 'path', 'win32_VideoController', 'get', 'name', '/format:csv'],
+        timeout=15,
+    )
+
     if code == 0 and out:
         # Output CSV: Node,Name
         lines = out.strip().split('\n')
@@ -115,18 +118,23 @@ def _detect_gpu_windows() -> tuple[GPUVendor, str]:
                 if name and name.lower() != 'name':
                     vendor = _classify_gpu_vendor(name)
                     return vendor, name
-    
+
     # Fallback: PowerShell Get-CimInstance
-    code, out, _ = _run_cmd([
-        'powershell', '-NoProfile', '-Command',
-        "Get-CimInstance Win32_VideoController | Select-Object -ExpandProperty Name"
-    ], timeout=15)
-    
+    code, out, _ = _run_cmd(
+        [
+            'powershell',
+            '-NoProfile',
+            '-Command',
+            "Get-CimInstance Win32_VideoController | Select-Object -ExpandProperty Name",
+        ],
+        timeout=15,
+    )
+
     if code == 0 and out.strip():
         name = out.strip().split('\n')[0].strip()
         vendor = _classify_gpu_vendor(name)
         return vendor, name
-    
+
     return GPUVendor.UNKNOWN, "Unknown"
 
 
@@ -139,7 +147,7 @@ def _detect_gpu_linux() -> tuple[GPUVendor, str]:
             if 'VGA' in line or '3D' in line or 'Display' in line:
                 vendor = _classify_gpu_vendor(line)
                 return vendor, line.strip()
-    
+
     # Fallback: /proc/driver/nvidia/version
     try:
         with open('/proc/driver/nvidia/version', 'r') as f:
@@ -148,16 +156,14 @@ def _detect_gpu_linux() -> tuple[GPUVendor, str]:
                 return GPUVendor.NVIDIA, "NVIDIA GPU (detected via /proc)"
     except Exception:
         pass
-    
+
     return GPUVendor.UNKNOWN, "Unknown"
 
 
 def _detect_gpu_macos() -> tuple[GPUVendor, str]:
     """Detecta GPU no macOS via system_profiler."""
-    code, out, _ = _run_cmd([
-        'system_profiler', 'SPDisplaysDataType'
-    ], timeout=15)
-    
+    code, out, _ = _run_cmd(['system_profiler', 'SPDisplaysDataType'], timeout=15)
+
     if code == 0:
         # Procurar por Chipset/Model
         for line in out.split('\n'):
@@ -167,23 +173,23 @@ def _detect_gpu_macos() -> tuple[GPUVendor, str]:
                 if name:
                     vendor = _classify_gpu_vendor(name)
                     return vendor, name
-    
+
     # Apple Silicon detection
     if platform.processor() == 'arm' or platform.machine() == 'arm64':
         return GPUVendor.APPLE, f"Apple Silicon ({platform.machine()})"
-    
+
     return GPUVendor.UNKNOWN, "Unknown"
 
 
 def _classify_gpu_vendor(name: str) -> GPUVendor:
     """Classifica vendor pelo nome da GPU."""
     name_lower = name.lower()
-    
+
     nvidia_patterns = ['nvidia', 'geforce', 'quadro', 'tesla', 'rtx', 'gtx', 'titan']
     amd_patterns = ['amd', 'radeon', 'rx ', 'vega', 'fury', 'pro ', 'instinct']
     intel_patterns = ['intel', 'uhd', 'iris', 'hd graphics', 'xe graphics', 'arc ']
     apple_patterns = ['apple', 'm1', 'm2', 'm3', 'm4']
-    
+
     for pattern in nvidia_patterns:
         if pattern in name_lower:
             return GPUVendor.NVIDIA
@@ -196,7 +202,7 @@ def _classify_gpu_vendor(name: str) -> GPUVendor:
     for pattern in apple_patterns:
         if pattern in name_lower:
             return GPUVendor.APPLE
-    
+
     return GPUVendor.UNKNOWN
 
 
@@ -221,25 +227,24 @@ def _check_ffmpeg_hwaccel(ffmpeg: str, hwaccel: str) -> bool:
 def _get_ffmpeg_path() -> str:
     """Obtém caminho do ffmpeg (reutiliza lógica do cutter)."""
     import os
-    import sys
-    
+
     def base_dir() -> str:
         if getattr(sys, 'frozen', False):
             return os.path.dirname(sys.executable)
         return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    
+
     # 1) assets/ local
     bundled = os.path.join(base_dir(), 'assets', 'ffmpeg.exe')
     if os.path.isfile(bundled):
         return bundled
-    
+
     # 2) PyInstaller _MEIPASS
     meipass = getattr(sys, '_MEIPASS', None)
     if meipass:
         embedded = os.path.join(meipass, 'assets', 'ffmpeg.exe')
         if os.path.isfile(embedded):
             return embedded
-    
+
     # 3) PATH
     return 'ffmpeg'
 
@@ -247,23 +252,23 @@ def _get_ffmpeg_path() -> str:
 def detect_hardware(force_refresh: bool = False) -> HardwareCapabilities:
     """Detecta capacidades de hardware (com cache TTL)."""
     global _HARDWARE_CACHE
-    
+
     with _CACHE_LOCK:
         if not force_refresh and 'data' in _HARDWARE_CACHE:
             if time.time() - _HARDWARE_CACHE.get('timestamp', 0) < _CACHE_TTL:
                 return _HARDWARE_CACHE['data']
-    
+
     logger.info("Detectando hardware do sistema...")
-    
+
     # RAM
     mem = psutil.virtual_memory()
-    total_ram_gb = mem.total / (1024 ** 3)
-    available_ram_gb = mem.available / (1024 ** 3)
-    
+    total_ram_gb = mem.total / (1024**3)
+    available_ram_gb = mem.available / (1024**3)
+
     # CPU
     cpu_cores = psutil.cpu_count(logical=False) or 1
     cpu_threads = psutil.cpu_count(logical=True) or 1
-    
+
     # GPU
     system = platform.system().lower()
     if system == 'windows':
@@ -274,33 +279,36 @@ def detect_hardware(force_refresh: bool = False) -> HardwareCapabilities:
         gpu_vendor, gpu_name = _detect_gpu_macos()
     else:
         gpu_vendor, gpu_name = GPUVendor.UNKNOWN, "Unknown"
-    
+
     logger.info("GPU detectada: %s (%s)", gpu_name, gpu_vendor.value)
-    
+
     # FFmpeg capabilities
     ffmpeg = _get_ffmpeg_path()
-    
+
     has_nvenc = False
     has_cuda = False
     has_quicksync = False
     has_vaapi = False
     has_videotoolbox = False
-    
+
     if gpu_vendor == GPUVendor.NVIDIA:
         has_nvenc = _check_ffmpeg_encoder(ffmpeg, 'h264_nvenc')
-        has_cuda = (has_nvenc and 
-                   _check_ffmpeg_filter(ffmpeg, 'scale_cuda') and
-                   _check_ffmpeg_hwaccel(ffmpeg, 'cuda'))
+        has_cuda = (
+            has_nvenc
+            and _check_ffmpeg_filter(ffmpeg, 'scale_cuda')
+            and _check_ffmpeg_hwaccel(ffmpeg, 'cuda')
+        )
     elif gpu_vendor == GPUVendor.INTEL:
         has_quicksync = _check_ffmpeg_encoder(ffmpeg, 'h264_qsv')
         has_vaapi = _check_ffmpeg_encoder(ffmpeg, 'h264_vaapi')
     elif gpu_vendor == GPUVendor.AMD:
+        # AMD no Windows não expõe VAAPI no ffmpeg build padrão; o pipeline
+        # cai para CPU de forma segura (libx264) em vez de tentar AMF, que não
+        # é implementado aqui.
         has_vaapi = _check_ffmpeg_encoder(ffmpeg, 'h264_vaapi')
-        # AMF (Windows) - verificar se disponível
-        has_amf = _check_ffmpeg_encoder(ffmpeg, 'h264_amf')
     elif gpu_vendor == GPUVendor.APPLE:
         has_videotoolbox = _check_ffmpeg_encoder(ffmpeg, 'h264_videotoolbox')
-    
+
     # Determinar profile
     is_low_memory = available_ram_gb < 10.0  # Menos de 10GB livre
     if total_ram_gb >= 32 and gpu_vendor in (GPUVendor.NVIDIA, GPUVendor.AMD):
@@ -309,7 +317,7 @@ def detect_hardware(force_refresh: bool = False) -> HardwareCapabilities:
         profile = HardwareProfile.MID_RANGE
     else:
         profile = HardwareProfile.LOW_MEMORY
-    
+
     caps = HardwareCapabilities(
         has_nvenc=has_nvenc,
         has_cuda=has_cuda,
@@ -325,10 +333,10 @@ def detect_hardware(force_refresh: bool = False) -> HardwareCapabilities:
         is_low_memory=is_low_memory,
         profile=profile,
     )
-    
+
     with _CACHE_LOCK:
         _HARDWARE_CACHE = {'data': caps, 'timestamp': time.time()}
-    
+
     logger.info("Hardware detectado: %s", caps.summary())
     return caps
 
