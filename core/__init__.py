@@ -1,6 +1,6 @@
 # Módulo core - lógica de download e corte
 
-__version__ = '1.2.0'
+__version__ = '1.2.1'
 
 from core.bootstrap import bootstrap_config
 from core.config import (

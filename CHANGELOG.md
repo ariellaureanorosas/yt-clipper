@@ -9,6 +9,12 @@ projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
 ### Adicionado
 
+- Novo ícone do aplicativo (`icons/app.ico`).
+
+## [1.2.0] - 2026-11-24
+
+### Adicionado
+
 - **Atualização automática** (`core/updater.py`): o executável consulta a
   última Release do GitHub, baixa o novo `.exe` em segundo plano, confere o
   SHA-256 e se substitui com o auxílio de um script PowerShell (o Windows não
