@@ -165,6 +165,15 @@ class EncoderConfig:
 
 
 @dataclass(frozen=True, slots=True)
+class UpdateConfig:
+    """Configuração da atualização automática via GitHub Releases."""
+
+    enabled: bool = True
+    check_on_start: bool = True
+    timeout: int = 8  # segundos por requisição HTTP
+
+
+@dataclass(frozen=True, slots=True)
 class AppConfig:
     """Configuração global da aplicação."""
 
@@ -193,6 +202,9 @@ class AppConfig:
 
     # Encoder
     encoder: EncoderConfig = field(default_factory=EncoderConfig)
+
+    # Atualização automática
+    update: UpdateConfig = field(default_factory=UpdateConfig)
 
     # Logging
     log_level: str = "INFO"
@@ -267,6 +279,18 @@ class AppConfig:
             audio_bitrate=os.getenv("YTCLIPPER_AUDIO_BITRATE", "192k"),
         )
 
+        # Atualização automática (ligada por padrão; desligável por ambiente)
+        truthy = ("1", "true", "yes", "on")
+        update = UpdateConfig(
+            enabled=os.getenv("YTCLIPPER_CHECK_UPDATES", "true").strip().lower()
+            in truthy,
+            check_on_start=os.getenv("YTCLIPPER_UPDATE_CHECK_ON_START", "true")
+            .strip()
+            .lower()
+            in truthy,
+            timeout=int(os.getenv("YTCLIPPER_UPDATE_TIMEOUT", "8")),
+        )
+
         config = cls(
             hardware_profile=profile,
             force_low_memory=force_low_mem,
@@ -275,6 +299,7 @@ class AppConfig:
             log_dir=log_dir,
             download=download,
             encoder=encoder,
+            update=update,
             log_level=os.getenv("YTCLIPPER_LOG_LEVEL", "INFO"),
         )
 

@@ -7,6 +7,28 @@ projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
 ## [Não publicado]
 
+### Adicionado
+
+- **Atualização automática** (`core/updater.py`): o executável consulta a
+  última Release do GitHub, baixa o novo `.exe` em segundo plano, confere o
+  SHA-256 e se substitui com o auxílio de um script PowerShell (o Windows não
+  permite sobrescrever um `.exe` em execução). A interface pergunta antes de
+  atualizar, mostra progresso e permite cancelar; falhas de rede não afetam o
+  uso normal. Pode ser desligada com `YTCLIPPER_CHECK_UPDATES=false`.
+- Botão **Verificar Atualizações** no diagnóstico do sistema.
+- Configuração `UpdateConfig` (`enabled`, `check_on_start`, `timeout`) com
+  suporte a variáveis de ambiente.
+
+### Corrigido
+
+- **Áudio atrasado no formato vertical**: ao converter para 1080×1920 o vídeo é
+  re-encodado, mas o áudio AAC era apenas copiado (`-c:a copy`), mantendo os
+  timestamps da origem e desalinhando o sincronismo A/V. Agora, sempre que o
+  vídeo é re-encodado, o áudio também é re-encodado com
+  `aresample=async=1:first_pts=0` e os streams são mapeados explicitamente com
+  `-avoid_negative_ts make_zero`. O stream copy (horizontal) continua copiando o
+  áudio, sem perda de qualidade nem custo extra.
+
 ### Planejado
 
 - Testes automatizados para a interface (Tkinter) com `pytest` + mocks de janela.

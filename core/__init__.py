@@ -1,6 +1,6 @@
 # Módulo core - lógica de download e corte
 
-__version__ = '1.1.0'
+__version__ = '1.2.0'
 
 from core.bootstrap import bootstrap_config
 from core.config import (
@@ -9,6 +9,7 @@ from core.config import (
     EncoderConfig,
     GPUVendor,
     HardwareProfile,
+    UpdateConfig,
     get_config,
     reset_config,
     set_config,
@@ -34,6 +35,7 @@ __all__ = [
     'EncoderConfig',
     'HardwareProfile',
     'GPUVendor',
+    'UpdateConfig',
     # hardware
     'get_cached_capabilities',
     'get_hardware_capabilities',
