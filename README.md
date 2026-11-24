@@ -55,6 +55,20 @@ baixe `YouTubeClipper-<versão>.exe` e execute. Não precisa instalar Python.
 - Na sua **área de trabalho (Desktop)** apareceu o atalho **"YouTube Clipper"**.
 - Clique duas vezes nele para abrir o programa. 🙂
 
+### Atualizações automáticas
+
+A partir da versão **1.2.0**, o programa se atualiza sozinho:
+
+- Ao abrir, ele verifica se existe uma versão mais nova publicada.
+- Se existir, mostra o que mudou e pergunta se você quer atualizar.
+- O download acontece em segundo plano; ao terminar, o programa fecha e
+  reabre já atualizado.
+- Se a atualização falhar (sem internet, por exemplo), o programa continua
+  funcionando normalmente e tenta de novo na próxima vez.
+
+> Quem usa uma versão anterior à **1.2.0** precisa baixar esta versão uma única
+> vez. Das próximas em diante, a atualização é automática.
+
 
 
 ---
@@ -134,6 +148,9 @@ Todas são opcionais; os defaults funcionam sem configuração.
 | `YTCLIPPER_DL_RETRIES` | `5` | Número de tentativas de download |
 | `YTCLIPPER_DL_CHUNK_SIZE` | `10485760` | Tamanho do chunk HTTP (bytes) |
 | `YTCLIPPER_LOG_LEVEL` | `INFO` | `DEBUG`, `INFO`, `WARNING`, `ERROR` |
+| `YTCLIPPER_CHECK_UPDATES` | `true` | `false` desliga a atualização automática |
+| `YTCLIPPER_UPDATE_CHECK_ON_START` | `true` | `false` não verifica ao abrir (o botão manual continua disponível) |
+| `YTCLIPPER_UPDATE_TIMEOUT` | `8` | Timeout das requisições de atualização (segundos) |
 
 ### Rodar em modo desenvolvimento
 
@@ -181,6 +198,22 @@ pyinstaller build.spec
 
 O `instalar.bat` faz isso automaticamente e ainda cria o atalho na área de trabalho.
 
+### Publicar uma nova versão (para o auto-update chegar aos usuários)
+
+1. Atualize `__version__` em `core/__init__.py` (ex.: `1.2.1`) e o `CHANGELOG.md`.
+2. Faça commit e push na `main`.
+3. Crie e envie a tag correspondente:
+
+```bash
+git tag v1.2.1
+git push origin v1.2.1
+```
+
+O workflow de release valida que a tag e o `__version__` são iguais, roda os
+testes, compila o `.exe`, gera o `.sha256` e publica na Release. O aplicativo
+dos usuários detecta essa Release na próxima abertura e se atualiza.
+
+
 ### Correção (corte sem travamento no início)
 
 O corte por *stream copy* usa `-noaccurate_seek` + `-avoid_negative_ts make_zero`, alinhando áudio e vídeo no mesmo keyframe (evita o frame congelado no início observado em players simples como o Windows Media Player).
@@ -199,6 +232,7 @@ yt-clipper/
 │   ├── bootstrap.py        # Aplica o perfil detectado na inicialização
 │   ├── downloader.py       # Download via yt-dlp
 │   ├── cutter.py           # Corte/conversão via ffmpeg (Strategy Pattern)
+│   ├── updater.py          # Auto-update via GitHub Releases
 │   ├── processes.py        # Registro/cancelamento de subprocessos
 │   └── logging_config.py   # Logging em arquivo
 ├── tests/                  # Testes automatizados (pytest + coverage)

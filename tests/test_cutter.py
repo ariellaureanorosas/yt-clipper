@@ -236,6 +236,22 @@ def test_cut_video_faz_stream_copy_quando_resolucao_igual_e_h264(monkeypatch):
 
     cmd = comandos[0]
     assert cmd[cmd.index('-c:v') + 1] == 'copy'
+    # No stream copy áudio e vídeo continuam copiados juntos e sincronizados.
+    assert cmd[cmd.index('-c:a') + 1] == 'copy'
+
+
+def test_cut_video_reencoda_audio_quando_converte_para_vertical(monkeypatch):
+    # Bug: no vertical o vídeo é re-encodado, mas o áudio era copiado do
+    # source AAC, mantendo timestamps antigos e ficando atrasado. Agora o
+    # áudio precisa ser re-encodado com aresample para começar em pts=0.
+    comandos = _setup_cut(monkeypatch, _caps(), [FakeProc(0)])
+
+    cutter.cut_video('in.mp4', 'out', 0, 10, 'vertical')
+
+    cmd = comandos[0]
+    assert cmd[cmd.index('-c:a') + 1] == 'aac'
+    assert 'aresample=async=1:first_pts=0' in cmd
+    assert 'make_zero' in cmd
 
 
 def test_cut_video_reencoda_quando_precisa_converter_para_vertical(monkeypatch):

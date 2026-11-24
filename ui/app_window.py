@@ -13,7 +13,7 @@ import tkinter as tk
 import urllib.request
 from dataclasses import replace
 from io import BytesIO
-from tkinter import filedialog
+from tkinter import filedialog, messagebox
 
 import customtkinter as ctk
 from PIL import Image
@@ -38,6 +38,14 @@ from core.downloader import (
 from core.hardware import get_cached_capabilities
 from core.logging_config import get_logger
 from core.processes import ProcessingCancelled, cleanup_for_dir
+from core.updater import (
+    UpdateCancelled,
+    apply_update_and_restart,
+    check_for_update,
+    cleanup_update_cache,
+    download_update,
+    is_frozen,
+)
 
 # Configuração do customtkinter
 ctk.set_appearance_mode('dark')
@@ -327,6 +335,9 @@ class AppWindow(ctk.CTk):
         self._tmp_dir = None
         self._output_part = None
         self._bar_indeterminate = False
+        self._update_checking = False
+        self._updating = False
+        self._update_cancel = None
 
         # Garante que o perfil de hardware detectado esteja aplicado antes de
         # montar a UI (idempotente se main.py já chamou).
@@ -340,6 +351,9 @@ class AppWindow(ctk.CTk):
         self._fit_window_to_content()
 
         self.protocol('WM_DELETE_WINDOW', self._on_close)
+
+        # Verificação de atualização em segundo plano, sem atrasar a abertura.
+        self.after(1500, self._auto_check_updates)
 
     def _fit_window_to_content(self):
         """
@@ -562,6 +576,14 @@ class AppWindow(ctk.CTk):
             height=32,
         ).pack(side='left')
 
+        ctk.CTkButton(
+            diag_frame,
+            text='Verificar Atualizações',
+            command=lambda: self._check_updates_async(silent=False),
+            height=32,
+            width=160,
+        ).pack(side='left', padx=(8, 0))
+
         # === SEÇÃO: PROGRESSO ===
         progress_frame = ctk.CTkFrame(self.scroll_frame)
         progress_frame.pack(fill='x', pady=(0, 8))
@@ -712,6 +734,183 @@ FFprobe: {get_ffprobe_path()}
             btn_frame, text='Copiar', command=lambda: self.clipboard_append(diag_text)
         ).pack(side='left')
         ctk.CTkButton(btn_frame, text='Fechar', command=win.destroy).pack(side='right')
+
+    # ── Atualizações ───────────────────────────────────────
+
+    def _auto_check_updates(self):
+        """Verifica atualizações ao abrir (apenas no executável)."""
+        if not is_frozen() or not get_config().update.check_on_start:
+            return
+        threading.Thread(target=cleanup_update_cache, daemon=True).start()
+        self._check_updates_async(silent=True)
+
+    def _check_updates_async(self, silent: bool = True):
+        """Consulta a última release em uma thread separada."""
+        if self._update_checking or self._updating:
+            return
+
+        if not is_frozen():
+            if not silent:
+                messagebox.showinfo(
+                    'Atualizações',
+                    'A atualização automática só está disponível no aplicativo '
+                    'instalado (.exe). Rodando pelo código, use o Git.',
+                    parent=self,
+                )
+            return
+
+        if not get_config().update.enabled:
+            if not silent:
+                messagebox.showinfo(
+                    'Atualizações',
+                    'A verificação de atualizações está desativada '
+                    '(YTCLIPPER_CHECK_UPDATES).',
+                    parent=self,
+                )
+            return
+
+        if self.is_processing:
+            if not silent:
+                messagebox.showinfo(
+                    'Atualizações',
+                    'Termine ou cancele o processamento atual antes de verificar.',
+                    parent=self,
+                )
+            return
+
+        self._update_checking = True
+        if not silent:
+            self.status_label.configure(
+                text='Verificando atualizações...', text_color='white'
+            )
+
+        def _worker():
+            try:
+                info = check_for_update(__version__)
+                error = None
+            except Exception as exc:
+                info, error = None, exc
+            self.after(0, lambda: self._on_update_checked(info, error, silent))
+
+        threading.Thread(target=_worker, daemon=True).start()
+
+    def _on_update_checked(self, info, error, silent: bool):
+        self._update_checking = False
+
+        if error is not None:
+            logger.warning('Falha ao verificar atualizações: %s', error)
+
+        if info is None:
+            if not silent:
+                if error is not None:
+                    messagebox.showerror(
+                        'Atualizações',
+                        f'Não foi possível verificar atualizações:\n\n{error}',
+                        parent=self,
+                    )
+                else:
+                    messagebox.showinfo(
+                        'Atualizações',
+                        f'Você já está na versão mais recente (v{__version__}).',
+                        parent=self,
+                    )
+            return
+
+        if self.is_processing:
+            logger.info(
+                'Atualização %s disponível, mas há processamento em andamento.',
+                info.version,
+            )
+            return
+
+        notes = (info.notes or '').strip()
+        if len(notes) > 700:
+            notes = notes[:700].rstrip() + '...'
+
+        message = f'Nova versão {info.version} disponível (você usa a v{__version__}).'
+        if notes:
+            message += f'\n\n{notes}'
+        message += '\n\nBaixar e instalar agora? O aplicativo será reiniciado.'
+
+        if messagebox.askyesno('Atualização disponível', message, parent=self):
+            self._start_update_download(info)
+
+    def _start_update_download(self, info):
+        """Baixa a atualização em segundo plano com progresso/cancelamento."""
+        self._updating = True
+        self._update_cancel = threading.Event()
+
+        self.process_btn.configure(state='disabled')
+        self.open_folder_btn.configure(state='disabled')
+        self.cancel_btn.configure(state='normal')
+        self.progress_bar.set(0)
+        self.status_label.configure(
+            text=f'Baixando atualização {info.version}...', text_color='white'
+        )
+
+        def _progress(pct, msg):
+            self.after(0, lambda: self._update_progress(pct, msg))
+
+        def _worker():
+            try:
+                path = download_update(info, _progress, self._update_cancel)
+            except UpdateCancelled:
+                self.after(0, self._on_update_cancelled)
+            except Exception as exc:
+                self.after(0, lambda error=exc: self._on_update_failed(error))
+            else:
+                self.after(0, lambda: self._on_update_downloaded(path))
+
+        threading.Thread(target=_worker, daemon=True).start()
+
+    def _on_update_downloaded(self, path):
+        self.progress_bar.set(1)
+        self.status_label.configure(
+            text='Atualização pronta. Reiniciando...', text_color='green'
+        )
+        self.update_idletasks()
+
+        try:
+            apply_update_and_restart(path)
+        except Exception as exc:
+            self._on_update_failed(exc)
+            return
+
+        self.after(700, self._on_close)
+
+    def _on_update_cancelled(self):
+        logger.info('Atualização cancelada pelo usuário.')
+        self._reset_update_controls()
+        self.status_label.configure(text='Atualização cancelada.', text_color='orange')
+
+    def _on_update_failed(self, error):
+        logger.warning('Falha ao atualizar: %s', error)
+        self._reset_update_controls()
+        self.status_label.configure(
+            text='Falha ao atualizar (o aplicativo continua funcionando).',
+            text_color='red',
+        )
+        messagebox.showerror(
+            'Atualização',
+            f'Não foi possível atualizar:\n\n{error}\n\n'
+            'Você pode continuar usando esta versão normalmente.',
+            parent=self,
+        )
+
+    def _reset_update_controls(self):
+        self._updating = False
+        self._update_cancel = None
+        self._stop_indeterminate()
+        self.progress_bar.set(0)
+        self.process_btn.configure(state='normal')
+        self.open_folder_btn.configure(
+            state=(
+                'normal'
+                if self._output_folder and os.path.isdir(self._output_folder)
+                else 'disabled'
+            )
+        )
+        self.cancel_btn.configure(state='disabled')
 
     # ── Outros callbacks ───────────────────────────────────
 
@@ -999,7 +1198,16 @@ FFprobe: {get_ffprobe_path()}
         threading.Thread(target=_worker, daemon=True).start()
 
     def _cancel_processing(self):
-        """Cancela o processamento em andamento."""
+        """Cancela o processamento ou o download de atualização em andamento."""
+        if self._updating:
+            if self._update_cancel is not None:
+                self._update_cancel.set()
+            self.cancel_btn.configure(state='disabled')
+            self.status_label.configure(
+                text='Cancelando atualização...', text_color='orange'
+            )
+            return
+
         if not self.is_processing:
             return
         self.cancel_btn.configure(state='disabled')
@@ -1011,6 +1219,8 @@ FFprobe: {get_ffprobe_path()}
 
     def _on_close(self):
         """Fecha a janela garantindo que nenhum subprocesso fique órfão."""
+        if self._update_cancel is not None:
+            self._update_cancel.set()
         if self.is_processing:
             if self.cancel_event is not None:
                 self.cancel_event.set()

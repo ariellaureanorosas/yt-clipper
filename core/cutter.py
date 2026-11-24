@@ -74,7 +74,7 @@ class EncoderStrategy(Protocol):
         self,
         base: list[str],
         filter_args: list[str],
-        audio_args: list[str],
+        stream_args: list[str],
         output: str,
         input_path: str,
     ) -> list[str]: ...
@@ -102,7 +102,7 @@ class NVENCStrategy:
     def requires_hwaccel(self) -> bool:
         return True
 
-    def build_cmd(self, base, filter_args, audio_args, output, input_path):
+    def build_cmd(self, base, filter_args, stream_args, output, input_path):
         cmd = [
             *base,
             '-hwaccel',
@@ -122,7 +122,7 @@ class NVENCStrategy:
         ]
         if self.max_threads > 0:
             cmd.extend(['-threads', str(self.max_threads)])
-        cmd.extend(audio_args)
+        cmd.extend(stream_args)
         cmd.extend(
             ['-movflags', '+faststart', '-max_muxing_queue_size', '1024', output]
         )
@@ -145,7 +145,7 @@ class QuickSyncStrategy:
     def requires_hwaccel(self) -> bool:
         return True
 
-    def build_cmd(self, base, filter_args, audio_args, output, input_path):
+    def build_cmd(self, base, filter_args, stream_args, output, input_path):
         cmd = [
             *base,
             '-init_hw_device',
@@ -165,7 +165,7 @@ class QuickSyncStrategy:
         ]
         if self.max_threads > 0:
             cmd.extend(['-threads', str(self.max_threads)])
-        cmd.extend(audio_args)
+        cmd.extend(stream_args)
         cmd.extend(
             ['-movflags', '+faststart', '-max_muxing_queue_size', '1024', output]
         )
@@ -188,7 +188,7 @@ class VAAPIStrategy:
     def requires_hwaccel(self) -> bool:
         return True
 
-    def build_cmd(self, base, filter_args, audio_args, output, input_path):
+    def build_cmd(self, base, filter_args, stream_args, output, input_path):
         cmd = [
             *base,
             '-hwaccel',
@@ -208,7 +208,7 @@ class VAAPIStrategy:
         ]
         if self.max_threads > 0:
             cmd.extend(['-threads', str(self.max_threads)])
-        cmd.extend(audio_args)
+        cmd.extend(stream_args)
         cmd.extend(
             ['-movflags', '+faststart', '-max_muxing_queue_size', '1024', output]
         )
@@ -231,7 +231,7 @@ class VideoToolboxStrategy:
     def requires_hwaccel(self) -> bool:
         return True
 
-    def build_cmd(self, base, filter_args, audio_args, output, input_path):
+    def build_cmd(self, base, filter_args, stream_args, output, input_path):
         cmd = [
             *base,
             '-hwaccel',
@@ -247,7 +247,7 @@ class VideoToolboxStrategy:
         ]
         if self.max_threads > 0:
             cmd.extend(['-threads', str(self.max_threads)])
-        cmd.extend(audio_args)
+        cmd.extend(stream_args)
         cmd.extend(
             ['-movflags', '+faststart', '-max_muxing_queue_size', '1024', output]
         )
@@ -269,7 +269,7 @@ class StreamCopyStrategy:
     def requires_hwaccel(self) -> bool:
         return False
 
-    def build_cmd(self, base, filter_args, audio_args, output, input_path):
+    def build_cmd(self, base, filter_args, stream_args, output, input_path):
         return [
             *base,
             '-noaccurate_seek',
@@ -277,9 +277,7 @@ class StreamCopyStrategy:
             input_path,
             '-c:v',
             'copy',
-            *audio_args,
-            '-avoid_negative_ts',
-            'make_zero',
+            *stream_args,
             '-movflags',
             '+faststart',
             '-max_muxing_queue_size',
@@ -308,7 +306,7 @@ class CPUStrategy:
     def requires_hwaccel(self) -> bool:
         return False
 
-    def build_cmd(self, base, filter_args, audio_args, output, input_path):
+    def build_cmd(self, base, filter_args, stream_args, output, input_path):
         cmd = [
             *base,
             '-i',
@@ -336,7 +334,7 @@ class CPUStrategy:
                     '+nobuffer',
                 ]
             )
-        cmd.extend(audio_args)
+        cmd.extend(stream_args)
         cmd.extend(['-movflags', '+faststart', output])
         return cmd
 
@@ -594,17 +592,6 @@ def cut_video(
     orig_w, orig_h = _get_video_resolution(input_path)
     needs_scale = orig_w != target_w or orig_h != target_h
     audio_codec = _get_audio_codec(input_path)
-    audio_copy = audio_codec == 'aac' and encoder_cfg.audio_copy_if_aac
-
-    if audio_copy:
-        audio_args = ['-c:a', 'copy']
-    else:
-        audio_args = [
-            '-c:a',
-            encoder_cfg.audio_codec,
-            '-b:a',
-            encoder_cfg.audio_bitrate,
-        ]
 
     # Base args comuns
     base = [
@@ -626,6 +613,32 @@ def cut_video(
     # o corte fica praticamente instantâneo.
     video_codec = _get_video_codec(input_path)
     can_stream_copy = _can_stream_copy(needs_scale, video_codec)
+
+    # Só é seguro copiar o áudio quando o vídeo também é copiado. Ao
+    # re-encodar (ex.: conversão para vertical), copiar os pacotes AAC
+    # mantém os timestamps/pacotes originais e o áudio fica atrasado em
+    # relação ao vídeo novo. Nesses casos re-encodamos e forçamos o
+    # áudio a começar em pts=0, corrigindo o sincronismo A/V.
+    audio_copy = (
+        can_stream_copy and audio_codec == 'aac' and encoder_cfg.audio_copy_if_aac
+    )
+
+    stream_args: list[str] = ['-map', '0:v:0']
+    if audio_codec:
+        stream_args += ['-map', '0:a:0?']
+        if audio_copy:
+            stream_args += ['-c:a', 'copy']
+        else:
+            stream_args += [
+                '-c:a',
+                encoder_cfg.audio_codec,
+                '-b:a',
+                encoder_cfg.audio_bitrate,
+                '-af',
+                'aresample=async=1:first_pts=0',
+            ]
+    # Normaliza os timestamps de saída para que áudio e vídeo comecem em 0.
+    stream_args += ['-avoid_negative_ts', 'make_zero']
 
     if can_stream_copy:
         logger.info('Usando stream copy (corte instantâneo)')
@@ -649,7 +662,7 @@ def cut_video(
             progress_callback(0, f'Iniciando corte ({strategy.label})...')
         logger.info('Corte: tentando estratégia "%s"', strategy.label)
 
-        cmd = strategy.build_cmd(base, filter_args, audio_args, part_path, input_path)
+        cmd = strategy.build_cmd(base, filter_args, stream_args, part_path, input_path)
 
         logger.debug('FFmpeg cmd: %s', ' '.join(cmd))
 

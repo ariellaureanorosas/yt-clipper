@@ -9,6 +9,7 @@ from core.config import (
     DownloadConfig,
     EncoderConfig,
     HardwareProfile,
+    UpdateConfig,
     get_config,
     reset_config,
     set_config,
@@ -155,6 +156,37 @@ def test_prefer_hw_ambiente_tem_prioridade_sobre_perfil(monkeypatch):
     cfg = AppConfig.load()
 
     assert cfg.encoder.prefer_hardware is True
+
+
+def test_load_atualizacao_ligada_por_padrao(monkeypatch):
+    for var in ('YTCLIPPER_CHECK_UPDATES', 'YTCLIPPER_UPDATE_CHECK_ON_START'):
+        monkeypatch.delenv(var, raising=False)
+
+    cfg = AppConfig.load()
+
+    assert cfg.update.enabled is True
+    assert cfg.update.check_on_start is True
+    assert cfg.update.timeout == 8
+
+
+def test_load_desativa_atualizacao_por_ambiente(monkeypatch):
+    monkeypatch.setenv('YTCLIPPER_CHECK_UPDATES', 'false')
+    monkeypatch.setenv('YTCLIPPER_UPDATE_CHECK_ON_START', '0')
+    monkeypatch.setenv('YTCLIPPER_UPDATE_TIMEOUT', '20')
+
+    cfg = AppConfig.load()
+
+    assert cfg.update.enabled is False
+    assert cfg.update.check_on_start is False
+    assert cfg.update.timeout == 20
+
+
+def test_update_config_padrao_e_imutavel():
+    cfg = UpdateConfig()
+
+    assert cfg.enabled is True
+    with pytest.raises((AttributeError, TypeError)):
+        cfg.enabled = False
 
 
 def test_with_profile_preserva_opcoes_nao_relacionadas():
