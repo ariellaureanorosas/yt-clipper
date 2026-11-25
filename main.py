@@ -35,6 +35,22 @@ def _set_app_user_model_id() -> None:
 
 
 def main():
+    # Modo de verificação usado pelo supervisor de atualização: grava a versão
+    # embutida neste executável e sai, sem abrir a interface.
+    if '--version-file' in sys.argv:
+        from pathlib import Path
+
+        from core import __version__
+
+        index = sys.argv.index('--version-file')
+        try:
+            target = sys.argv[index + 1]
+        except IndexError:
+            print('uso: YouTubeClipper.exe --version-file <caminho>')
+            return 2
+        Path(target).write_text(__version__, encoding='utf-8')
+        return 0
+
     from core.bootstrap import bootstrap_config
     from core.logging_config import get_logger, setup_logging
     from ui.app_window import AppWindow
@@ -50,7 +66,8 @@ def main():
 
     app = AppWindow()
     app.mainloop()
+    return 0
 
 
 if __name__ == '__main__':
-    main()
+    sys.exit(main())

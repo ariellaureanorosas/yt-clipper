@@ -7,6 +7,29 @@ projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
 ## [Não publicado]
 
+## [1.3.1] - 2026-11-25
+
+### Adicionado
+
+- **Supervisor de atualização externo** (`tools/update_helper.py`, `build_helper.spec`): executável sem console instalado em `%LOCALAPPDATA%\YouTubeClipper\updater`, fora da pasta do aplicativo. Espera o app encerrar de verdade (por PID), faz backup por renomeação (sem copiar centenas de MB), executa o Setup com `/DIR` explícito, valida a versão instalada com `--version-file`, restaura o backup em caso de falha e reabre o app.
+- **Estado persistente da atualização** (`core/update_state.py`): `pending.json`, `started.json` (handshake), `last-result.json` e `failed-version.json` com escrita atômica em `%LOCALAPPDATA%\YouTubeClipper\state`.
+- **Supressão de versão que falhou**: uma versão com instalação malsucedida não é oferecida novamente por 24 h no check automático (verificação manual continua disponível).
+- CLI `--version-file` no `main.py`: grava a versão embutida no exe e sai, usado pelo supervisor para validar a instalação.
+
+### Alterado
+
+- **Seleção exata do asset** (`core/updater.py:_find_installer_asset`): aceita apenas `YouTubeClipper-Setup-<versão>.exe`; nomes fora do padrão só são aceitos se a versão embutida corresponder exatamente à release. Corrige o bug da v1.2.1 que baixava qualquer `YouTubeClipper-*.exe`.
+- **Download validado** (`core/updater.py:download_update`: confere tamanho vs. Content-Length, cabeçalho `MZ` e SHA-256 quando a release publica o checksum. Arquivos vazios/corrompidos são rejeitados antes de substituir o instalador final.
+- **Aplicação via supervisor** (`core/updater.py:apply_update_and_restart`): grava o pedido, inicia o helper detached, aguarda o handshake antes de fechar a janela. Passa `/DIR=<pasta de instalação>` para não depender do registro.
+- **Instalador** (`installer/ytclipper.iss`): supervisor instalado fora de `{app}` com `onlyifdoesntexist`; `[Run]` do silenciado gated por `YTCLIPPER_SKIP_RELAUNCH` para evitar dupla instância; `[UninstallDelete]` remove a pasta do supervisor.
+- **Interface** (`ui/app_window.py`: lê `last-result.json` na abertura (mensagem única), mostra dialog de erro em falha, aguarda handshake antes de fechar, status "Instalando..." durante a aplicação.
+- **CI** (`.github/workflows/release.yml`: passo de compilação do supervisor (`build_helper.spec`).
+
+### Corrigido
+
+- **Loop de atualização em falha**: antes, um instalador que saía com erro não era detectado e o app oferecia a mesma versão novamente. Agora o supervisor registra o resultado, restaura o backup e suprime a versão por 24 h.
+- **Segundo atalho/instalação**: `/DIR` explícito impede que o Inno instale em um local diferente do registro.
+
 ## [1.3.0] - 2026-11-25
 
 ### Adicionado

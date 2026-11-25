@@ -43,18 +43,21 @@ depois — a primeira execução é imediata.
 
 ### Atualizações automáticas
 
-A partir da versão **1.3.0**, o programa se atualiza sozinho:
+A partir da versão **1.3.1**, o programa se atualiza sozinho com supervisão:
 
 - Ao abrir, ele verifica se existe uma versão mais nova publicada.
 - Se existir, mostra o que mudou e pergunta se você quer atualizar.
-- O download acontece em segundo plano; ao terminar, o instalador fecha o
-  programa, atualiza os arquivos e **reabre o aplicativo já atualizado**.
-- O local da instalação aparece em **Ver Diagnóstico do Sistema** e no botão
-  **"Abrir pasta do app"**.
-- Se a atualização falhar (sem internet, por exemplo), o programa continua
-  funcionando normalmente e tenta de novo na próxima vez.
+- O download acontece em segundo plano e é validado (tamanho, cabeçalho de
+  executável e SHA-256 quando a release publica o checksum).
+- Ao terminar, um **supervisor externo** espera o app fechar de verdade, faz um
+  backup rápido da instalação, executa o Setup **no mesmo local**, confere a
+  versão instalada e **reabre o aplicativo já atualizado**.
+- Se a instalação falhar, o supervisor **restaura a versão anterior**, registra
+  o motivo e o app mostra o erro na próxima abertura. A mesma versão não é
+  oferecida de novo por 24 h (a verificação manual continua disponível).
+- Logs em `%LOCALAPPDATA%\YouTubeClipper\logs` (`app.log` e `update-*.log`).
 
-> Quem está na **v1.2.1 ou anterior** precisa baixar este Setup **uma única
+> Quem está na **v1.3.0 ou anterior** precisa baixar este Setup **uma única
 > vez**. Das próximas em diante, a atualização é automática.
 
 ---

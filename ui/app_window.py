@@ -9,6 +9,7 @@ import re
 import sys
 import tempfile
 import threading
+import time
 import tkinter as tk
 import urllib.request
 from dataclasses import replace
@@ -39,6 +40,12 @@ from core.hardware import get_cached_capabilities
 from core.logging_config import get_logger
 from core.processes import ProcessingCancelled, cleanup_for_dir
 from core.resources import resource_path
+from core.update_state import (
+    clear_pending,
+    consume_result,
+    read_pending,
+    record_failed_version,
+)
 from core.updater import (
     UpdateCancelled,
     apply_update_and_restart,
@@ -48,6 +55,7 @@ from core.updater import (
     get_install_dir,
     is_frozen,
     is_installed,
+    updates_dir,
 )
 
 # Configuração do customtkinter
@@ -342,6 +350,7 @@ class AppWindow(ctk.CTk):
         self._update_checking = False
         self._updating = False
         self._update_cancel = None
+        self._pending_update = None
 
         # Garante que o perfil de hardware detectado esteja aplicado antes de
         # montar a UI (idempotente se main.py já chamou).
@@ -363,7 +372,9 @@ class AppWindow(ctk.CTk):
 
         self.protocol('WM_DELETE_WINDOW', self._on_close)
 
-        # Verificação de atualização em segundo plano, sem atrasar a abertura.
+        # Resultado da atualização anterior (sucesso/falha) e depois a
+        # verificação normal em segundo plano, sem atrasar a abertura.
+        self.after(300, self._report_update_result)
         self.after(1500, self._auto_check_updates)
 
     def _apply_window_icon(self):
@@ -792,6 +803,78 @@ FFprobe: {get_ffprobe_path()}
 
     # ── Atualizações ───────────────────────────────────────
 
+    def _report_update_result(self):
+        """Mostra o resultado da atualização anterior, uma única vez."""
+        result = consume_result()
+        if result:
+            status = result.get('status')
+            version = result.get('target_version') or '?'
+            log_file = result.get('log_file') or ''
+            inno_log = result.get('inno_log') or ''
+
+            if status == 'success':
+                logger.info(
+                    'Atualização para %s concluída com sucesso. Log: %s',
+                    version,
+                    log_file,
+                )
+                return
+
+            logger.warning(
+                'Atualização para %s falhou no passo %s: %s ' '(exit=%s, rollback=%s)',
+                version,
+                result.get('step'),
+                result.get('message'),
+                result.get('installer_exit_code'),
+                result.get('rolled_back'),
+            )
+            # Garante a supressão mesmo que o supervisor não tenha conseguido.
+            record_failed_version(version, result)
+
+            details = [f'Versão: {version}', f'Passo: {result.get("step") or "?"}']
+            if result.get('installer_exit_code') is not None:
+                details.append(
+                    'Código de saída do instalador: ' f'{result["installer_exit_code"]}'
+                )
+            details.append(f'Motivo: {result.get("message") or "desconhecido"}')
+            if result.get('rolled_back'):
+                details.append('A versão anterior foi restaurada automaticamente.')
+            if log_file:
+                details.append(f'Log do atualizador: {log_file}')
+            if inno_log:
+                details.append(f'Log do instalador: {inno_log}')
+            details.append(
+                'O aplicativo continua funcionando na versão atual. '
+                'Baixe o Setup mais recente na página de releases se quiser '
+                'tentar de novo manualmente.'
+            )
+            messagebox.showerror(
+                'Atualização não concluída',
+                '\n'.join(details),
+                parent=self,
+            )
+            return
+
+        pending = read_pending()
+        if not pending:
+            return
+        try:
+            age = time.time() - float(pending.get('created_at') or 0)
+        except (TypeError, ValueError):
+            age = 0
+        if age < 600:
+            # Pode ser o supervisor ainda trabalhando (app aberto manualmente).
+            return
+        logger.warning('Atualização pendente sem resultado: %s', pending)
+        clear_pending()
+        messagebox.showwarning(
+            'Atualização incompleta',
+            'Uma atualização anterior foi iniciada, mas não terminou.\n\n'
+            'O aplicativo continua na versão atual. Se algo parecer errado, '
+            'baixe o Setup mais recente na página de releases.',
+            parent=self,
+        )
+
     def _auto_check_updates(self):
         """Verifica atualizações ao abrir (apenas no executável)."""
         if not is_frozen() or not get_config().update.check_on_start:
@@ -841,7 +924,7 @@ FFprobe: {get_ffprobe_path()}
 
         def _worker():
             try:
-                info = check_for_update(__version__)
+                info = check_for_update(__version__, ignore_suppressed=not silent)
                 error = None
             except Exception as exc:
                 info, error = None, exc
@@ -896,6 +979,7 @@ FFprobe: {get_ffprobe_path()}
     def _start_update_download(self, info):
         """Baixa a atualização em segundo plano com progresso/cancelamento."""
         self._updating = True
+        self._pending_update = info
         self._update_cancel = threading.Event()
 
         self.process_btn.configure(state='disabled')
@@ -922,19 +1006,22 @@ FFprobe: {get_ffprobe_path()}
         threading.Thread(target=_worker, daemon=True).start()
 
     def _on_update_downloaded(self, path):
+        info = self._pending_update
+        target_version = info.version if info is not None else ''
         self.progress_bar.set(1)
         self.status_label.configure(
-            text='Atualização pronta. Instalando e reabrindo o aplicativo...',
+            text='Atualização pronta. Instalando... o app reabrirá sozinho.',
             text_color='green',
         )
         self.update_idletasks()
 
         try:
-            apply_update_and_restart(path)
+            apply_update_and_restart(path, target_version)
         except Exception as exc:
             self._on_update_failed(exc)
             return
 
+        # O supervisor confirmou o início (handshake); agora pode fechar.
         self.after(500, self._on_close)
 
     def _on_update_cancelled(self):
@@ -953,7 +1040,8 @@ FFprobe: {get_ffprobe_path()}
             'Atualização',
             f'Não foi possível atualizar:\n\n{error}\n\n'
             'Você pode continuar usando esta versão normalmente.\n'
-            f'Instalação atual: {get_install_dir()}',
+            f'Instalação atual: {get_install_dir()}\n'
+            f'Logs: {updates_dir().parent / "logs"}',
             parent=self,
         )
 
