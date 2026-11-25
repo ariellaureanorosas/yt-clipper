@@ -56,6 +56,9 @@ jobs:
       - name: Compilar aplicativo (onedir)
         run: pyinstaller --clean --noconfirm build.spec
 
+      - name: Compilar supervisor de atualização
+        run: pyinstaller --clean --noconfirm build_helper.spec
+
       - name: Gerar instalador (Inno Setup)
         shell: pwsh
         run: |

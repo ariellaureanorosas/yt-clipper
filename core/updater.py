@@ -2,10 +2,12 @@
 Atualização automática do YouTube Clipper a partir das Releases do GitHub.
 
 O aplicativo consulta a última release, baixa o instalador
-(``YouTubeClipper-Setup-<versão>.exe``), confere o SHA-256 e o executa em modo
-silencioso. O instalador (Inno Setup) fecha a instância em execução, substitui
-os arquivos e reabre o aplicativo já atualizado — por isso não é mais
-necessário o script PowerShell que trocava o ``.exe`` em uso.
+(``YouTubeClipper-Setup-<versão>.exe``) e valida tamanho, cabeçalho ``MZ`` e
+SHA-256. A aplicação é entregue a um supervisor externo
+(``YouTubeClipperUpdater.exe``) que espera o app encerrar de verdade, faz backup
+por renomeação, executa o Setup com ``/DIR`` explícito, confere a versão
+instalada, restaura o backup em caso de falha e reabre o aplicativo. Assim não
+é mais necessário o script PowerShell que trocava o ``.exe`` em uso.
 
 Ao rodar direto do código (``python main.py``) nada é aplicado: o módulo
 apenas expõe as funções usadas pela interface.
@@ -21,11 +23,12 @@ import subprocess
 import sys
 import tempfile
 import time
+import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.request import Request, urlopen
 
-from core import __version__
+from core import __version__, update_state
 from core.config import get_config
 from core.logging_config import get_logger
 from core.resources import executable_dir, is_frozen
@@ -39,6 +42,8 @@ _CHUNK_SIZE = 256 * 1024
 _USER_AGENT = f'YouTubeClipper-Updater/{__version__}'
 _VERSION_RE = re.compile(r'^[vV]?(\d+(?:\.\d+)*)(?:[-+].*)?$')
 _UNINSTALLER_NAME = 'unins000.exe'
+_HELPER_NAME = 'YouTubeClipperUpdater.exe'
+_HANDSHAKE_TIMEOUT = 15.0
 
 
 class UpdateError(RuntimeError):
@@ -107,6 +112,21 @@ def _updates_dir() -> Path:
     return Path(base) / 'YouTubeClipper' / 'updates'
 
 
+def updates_dir() -> Path:
+    """Pasta pública dos downloads de atualização (para mensagens de erro)."""
+    return _updates_dir()
+
+
+def helper_path() -> Path:
+    """Caminho do supervisor instalado fora da pasta do aplicativo.
+
+    Fica em ``%LOCALAPPDATA%\\YouTubeClipper\\updater`` para não ser
+    sobrescrito/apagado enquanto está em execução durante a instalação.
+    """
+    base = os.environ.get('LOCALAPPDATA') or tempfile.gettempdir()
+    return Path(base) / 'YouTubeClipper' / 'updater' / _HELPER_NAME
+
+
 def _request_timeout(download: bool = False) -> float:
     timeout = get_config().update.timeout
     return max(timeout, 30) if download else timeout
@@ -156,14 +176,24 @@ def _safe_remove(path: Path) -> None:
 
 
 def _find_installer_asset(assets: list[dict], version: str) -> dict | None:
-    """Localiza o ``YouTubeClipper-Setup-<versão>.exe`` da release."""
+    """Localiza o ``YouTubeClipper-Setup-<versão>.exe`` da release.
+
+    Só aceita nome diferente do padrão quando a versão embutida no nome é
+    exatamente a versão da release. Isso evita baixar o asset errado (o bug da
+    v1.2.1 escolhia qualquer ``YouTubeClipper-*.exe``, inclusive o Setup).
+    """
     expected = f'{_INSTALLER_PREFIX}{version}.exe'
     for asset in assets:
         if asset.get('name') == expected:
             return asset
+
+    wanted = parse_version(version)
     for asset in assets:
         name = str(asset.get('name', ''))
-        if name.startswith(_INSTALLER_PREFIX) and name.endswith('.exe'):
+        if not (name.startswith(_INSTALLER_PREFIX) and name.endswith('.exe')):
+            continue
+        embedded = name[len(_INSTALLER_PREFIX) : -len('.exe')]
+        if wanted and parse_version(embedded) == wanted:
             return asset
     return None
 
@@ -182,6 +212,7 @@ def _find_checksum_asset(assets: list[dict], installer_name: str) -> dict | None
 def check_for_update(
     current_version: str | None = None,
     timeout: float | None = None,
+    ignore_suppressed: bool = False,
 ) -> UpdateInfo | None:
     """Retorna a release mais nova ou ``None`` se não houver atualização.
 
@@ -211,6 +242,13 @@ def check_for_update(
         return None
 
     version = tag.lstrip('vV').strip()
+    if not ignore_suppressed and update_state.is_version_suppressed(version):
+        logger.info(
+            'A versão %s falhou na última tentativa; não será oferecida '
+            'automaticamente por enquanto (verificação manual continua).',
+            version,
+        )
+        return None
     assets = release.get('assets') or []
     installer_asset = _find_installer_asset(assets, version)
     if not installer_asset:
@@ -319,6 +357,17 @@ def download_update(
                 info.version,
             )
 
+        downloaded = part_path.stat().st_size
+        if downloaded <= 0:
+            raise UpdateError('O download da atualização ficou vazio.')
+        if info.size and downloaded != info.size:
+            raise UpdateError(
+                f'Download incompleto: {downloaded} de {info.size} bytes.'
+            )
+        with open(part_path, 'rb') as handle:
+            if handle.read(2) != b'MZ':
+                raise UpdateError('O arquivo baixado não é um executável do Windows.')
+
         os.replace(part_path, final_path)
     except (UpdateCancelled, UpdateError):
         _safe_remove(part_path)
@@ -333,13 +382,16 @@ def download_update(
 # ── Aplicação da atualização ──────────────────────────────────
 
 
-def build_installer_command(installer: Path, log_path: Path) -> list[str]:
+def build_installer_command(
+    installer: Path, log_path: Path, install_dir: Path | None = None
+) -> list[str]:
     """Monta o comando do instalador para atualização silenciosa.
 
-    ``/SILENT`` esconde o assistente mas mantém a janela de progresso, para o
-    usuário ver que a atualização está acontecendo.
+    ``/DIR`` fixa o destino na pasta onde o aplicativo está rodando; sem isso o
+    Inno depende do registro/``UsePreviousAppDir`` e pode instalar uma segunda
+    cópia em outro lugar.
     """
-    return [
+    command = [
         str(installer),
         '/SILENT',
         '/SUPPRESSMSGBOXES',
@@ -347,14 +399,18 @@ def build_installer_command(installer: Path, log_path: Path) -> list[str]:
         '/CLOSEAPPLICATIONS',
         f'/LOG={log_path}',
     ]
+    if install_dir is not None:
+        command.append(f'/DIR={install_dir}')
+    return command
 
 
-def apply_update_and_restart(installer: Path) -> None:
-    """Executa o instalador silencioso e encerra para ele assumir.
+def apply_update_and_restart(installer: Path, target_version: str) -> None:
+    """Entrega a atualização ao supervisor externo e espera o handshake.
 
-    O instalador fecha a instância atual (``/CLOSEAPPLICATIONS``), substitui os
-    arquivos e reabre o aplicativo já atualizado. O chamador deve fechar a
-    janela logo depois.
+    O supervisor é quem espera o app encerrar, faz o backup, executa o Setup,
+    valida o resultado, restaura em caso de falha e reabre o aplicativo. Aqui
+    só gravamos o pedido e confirmamos que o supervisor realmente iniciou antes
+    de o chamador fechar a janela.
     """
     if not is_frozen():
         raise UpdateError(
@@ -363,38 +419,94 @@ def apply_update_and_restart(installer: Path) -> None:
         )
     if sys.platform != 'win32':
         raise UpdateError('A atualização automática está disponível só no Windows.')
+    if not is_installed():
+        raise UpdateError(
+            'Esta cópia não foi instalada pelo Setup; baixe o instalador '
+            'mais recente para atualizar.'
+        )
+    if not target_version:
+        raise UpdateError('Versão de destino da atualização não informada.')
 
     installer_path = Path(installer).resolve()
     if not installer_path.is_file():
         raise UpdateError('Instalador da atualização não encontrado.')
 
-    log_path = _updates_dir() / f'install-{int(time.time())}.log'
-    command = build_installer_command(installer_path, log_path)
+    helper = helper_path()
+    if not helper.is_file():
+        raise UpdateError(
+            f'O supervisor de atualização não foi encontrado em {helper}. '
+            'Reinstale o aplicativo com o Setup mais recente.'
+        )
+
+    install_dir = get_install_dir()
+    inno_log = _updates_dir() / f'install-{int(time.time())}.log'
+    token = uuid.uuid4().hex
+    pending = update_state.write_pending(
+        {
+            'token': token,
+            'installer': str(installer_path),
+            'install_dir': str(install_dir),
+            'target_version': str(target_version),
+            'current_version': __version__,
+            'parent_pid': os.getpid(),
+            'inno_log': str(inno_log),
+            'created_at': time.time(),
+        }
+    )
+    update_state.clear_started()
 
     creationflags = getattr(subprocess, 'CREATE_NO_WINDOW', 0) | getattr(
         subprocess, 'DETACHED_PROCESS', 0
     )
     try:
-        subprocess.Popen(
-            command,
+        process = subprocess.Popen(
+            [str(helper), '--pending', str(pending)],
             close_fds=True,
             creationflags=creationflags,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
     except OSError as exc:
-        raise UpdateError(f'Não foi possível executar o instalador: {exc}') from exc
+        update_state.clear_pending()
+        raise UpdateError(f'Não foi possível executar o supervisor: {exc}') from exc
 
     logger.info(
-        'Instalador %s iniciado; o aplicativo será reinstalado em %s. Log: %s',
-        installer_path.name,
-        get_install_dir(),
-        log_path,
+        'Supervisor %s iniciado (PID %s); aguardando confirmação.',
+        helper.name,
+        process.pid,
+    )
+
+    deadline = time.monotonic() + _HANDSHAKE_TIMEOUT
+    while time.monotonic() < deadline:
+        started = update_state.read_started()
+        if started and started.get('token') == token:
+            logger.info(
+                'Supervisor confirmou o início; o aplicativo pode fechar. ' 'Log: %s',
+                _updates_dir().parent / 'logs',
+            )
+            return
+        if process.poll() is not None:
+            break
+        time.sleep(0.2)
+
+    try:
+        process.terminate()
+    except OSError:
+        pass
+    update_state.clear_pending()
+    raise UpdateError(
+        'O supervisor de atualização não confirmou o início; a instalação '
+        'NÃO foi aplicada. Consulte os logs em '
+        f'{_updates_dir().parent / "logs"} e tente novamente.'
     )
 
 
 def cleanup_update_cache(max_age_days: int = 7) -> None:
-    """Remove downloads antigos/parciais da pasta de atualizações."""
+    """Remove downloads antigos/parciais e logs de instalação antigos.
+
+    Arquivos ``.part``/``.tmp`` (download interrompido) são sempre removidos,
+    independentemente da idade.
+    """
     directory = _updates_dir()
     if not directory.is_dir():
         return
@@ -402,7 +514,9 @@ def cleanup_update_cache(max_age_days: int = 7) -> None:
     cutoff = time.time() - max_age_days * 24 * 3600
     for entry in directory.iterdir():
         try:
-            if entry.is_file() and entry.stat().st_mtime < cutoff:
-                entry.unlink()
+            if entry.is_file():
+                stale_partial = entry.suffix in ('.part', '.tmp')
+                if stale_partial or entry.stat().st_mtime < cutoff:
+                    entry.unlink()
         except OSError:
             pass

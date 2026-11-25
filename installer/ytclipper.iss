@@ -61,6 +61,10 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 
 [Files]
 Source: "..\dist\YouTubeClipper\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+; Supervisor de atualização: fica FORA de {app} para não ser substituído
+; enquanto está rodando durante a instalação. onlyifdoesntexist evita
+; "arquivo em uso" e mantém o supervisor estável entre versões.
+Source: "..\dist\YouTubeClipperUpdater.exe"; DestDir: "{localappdata}\YouTubeClipper\updater"; Flags: ignoreversion onlyifdoesntexist
 
 [InstallDelete]
 ; Garante upgrade limpo: remove a instalação anterior antes de copiar.
@@ -75,8 +79,19 @@ Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExeName}"; Tasks: deskto
 [Run]
 ; Interativo: abre o app na tela final (checkbox "Executar YouTube Clipper").
 Filename: "{app}\{#AppExeName}"; Description: "{cm:LaunchProgram,{#AppName}}"; Flags: nowait postinstall skipifsilent
-; Silencioso (atualização automática): reabre o app assim que a instalação termina.
-Filename: "{app}\{#AppExeName}"; Flags: nowait; Check: WizardSilent
+; Silencioso (atualização automática): reabre o app assim que a instalação
+; termina. Em atualizações feitas pelo supervisor (versões novas), o supervisor
+; define YTCLIPPER_SKIP_RELAUNCH=1 e é ele quem reabre, evitando duas instâncias.
+; Na transição de versões antigas (sem supervisor), a variável não existe e o
+; Inno reabre normalmente.
+Filename: "{app}\{#AppExeName}"; Flags: nowait; Check: ShouldRelaunch
 
 [UninstallDelete]
 Type: filesandordirs; Name: "{app}"
+Type: filesandordirs; Name: "{localappdata}\YouTubeClipper\updater"
+
+[Code]
+function ShouldRelaunch: Boolean;
+begin
+  Result := WizardSilent and (GetEnv('YTCLIPPER_SKIP_RELAUNCH') = '');
+end;
