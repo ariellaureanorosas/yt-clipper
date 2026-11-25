@@ -38,13 +38,16 @@ from core.downloader import (
 from core.hardware import get_cached_capabilities
 from core.logging_config import get_logger
 from core.processes import ProcessingCancelled, cleanup_for_dir
+from core.resources import resource_path
 from core.updater import (
     UpdateCancelled,
     apply_update_and_restart,
     check_for_update,
     cleanup_update_cache,
     download_update,
+    get_install_dir,
     is_frozen,
+    is_installed,
 )
 
 # Configuração do customtkinter
@@ -326,6 +329,7 @@ class AppWindow(ctk.CTk):
         self.geometry('760x780')
         self.minsize(680, 520)
         self.resizable(True, True)
+        self._apply_window_icon()
 
         # Estado
         self.video_info = None
@@ -350,10 +354,39 @@ class AppWindow(ctk.CTk):
         self._check_ffmpeg()
         self._fit_window_to_content()
 
+        logger.info(
+            'Versão %s | instalado: %s | pasta: %s',
+            __version__,
+            is_installed(),
+            get_install_dir(),
+        )
+
         self.protocol('WM_DELETE_WINDOW', self._on_close)
 
         # Verificação de atualização em segundo plano, sem atrasar a abertura.
         self.after(1500, self._auto_check_updates)
+
+    def _apply_window_icon(self):
+        """Aplica o ícone na janela, na barra de título e na barra de tarefas."""
+        ico_path = resource_path('icons', 'app.ico')
+        try:
+            if os.path.isfile(ico_path):
+                # No Windows o .ico multi-tamanho define os ícones pequeno e
+                # grande da janela (barra de título, Alt+Tab e barra de tarefas).
+                # O -default também alcança janelas/diálogos criados depois.
+                self.iconbitmap(ico_path)
+                self.iconbitmap(default=ico_path)
+                return
+        except tk.TclError:
+            logger.debug('Não foi possível aplicar o ícone .ico.', exc_info=True)
+
+        png_path = resource_path('icons', 'app.png')
+        try:
+            if os.path.isfile(png_path):
+                self._icon_image = tk.PhotoImage(file=png_path)
+                self.iconphoto(True, self._icon_image)
+        except (tk.TclError, OSError):
+            logger.debug('Não foi possível aplicar o ícone .png.', exc_info=True)
 
     def _fit_window_to_content(self):
         """
@@ -384,6 +417,18 @@ class AppWindow(ctk.CTk):
             self.scroll_frame,
             text='YouTube Clipper',
             font=ctk.CTkFont(size=24, weight='bold'),
+        ).pack(pady=(0, 2))
+
+        subtitle = f'Versão {__version__}'
+        if is_frozen() and not is_installed():
+            subtitle += (
+                ' • versão portátil (instale pelo Setup para atualizar automaticamente)'
+            )
+        ctk.CTkLabel(
+            self.scroll_frame,
+            text=subtitle,
+            font=ctk.CTkFont(size=12),
+            text_color='gray',
         ).pack(pady=(0, 12))
 
         # === SEÇÃO: URL ===
@@ -584,6 +629,15 @@ class AppWindow(ctk.CTk):
             width=160,
         ).pack(side='left', padx=(8, 0))
 
+        if is_installed():
+            ctk.CTkButton(
+                diag_frame,
+                text='Abrir pasta do app',
+                command=self._open_app_folder,
+                height=32,
+                width=150,
+            ).pack(side='left', padx=(8, 0))
+
         # === SEÇÃO: PROGRESSO ===
         progress_frame = ctk.CTkFrame(self.scroll_frame)
         progress_frame.pack(fill='x', pady=(0, 8))
@@ -693,6 +747,7 @@ class AppWindow(ctk.CTk):
 
 === CONFIGURAÇÃO ATUAL ===
 Versão: {__version__}
+Instalação: {get_install_dir()} ({'instalado' if is_installed() else 'portátil/dev'})
 Perfil de hardware: {cfg.hardware_profile.value if cfg.hardware_profile else 'Auto'}
 Modo baixa memória: {'Sim' if cfg.encoder.low_memory_mode else 'Não'}
 Encoder preferido: {'Hardware (GPU)' if cfg.encoder.prefer_hardware else 'CPU (Software)'}
@@ -830,7 +885,10 @@ FFprobe: {get_ffprobe_path()}
         message = f'Nova versão {info.version} disponível (você usa a v{__version__}).'
         if notes:
             message += f'\n\n{notes}'
-        message += '\n\nBaixar e instalar agora? O aplicativo será reiniciado.'
+        message += (
+            '\n\nBaixar e instalar agora? O aplicativo será atualizado e '
+            'reaberto automaticamente.'
+        )
 
         if messagebox.askyesno('Atualização disponível', message, parent=self):
             self._start_update_download(info)
@@ -866,7 +924,8 @@ FFprobe: {get_ffprobe_path()}
     def _on_update_downloaded(self, path):
         self.progress_bar.set(1)
         self.status_label.configure(
-            text='Atualização pronta. Reiniciando...', text_color='green'
+            text='Atualização pronta. Instalando e reabrindo o aplicativo...',
+            text_color='green',
         )
         self.update_idletasks()
 
@@ -876,7 +935,7 @@ FFprobe: {get_ffprobe_path()}
             self._on_update_failed(exc)
             return
 
-        self.after(700, self._on_close)
+        self.after(500, self._on_close)
 
     def _on_update_cancelled(self):
         logger.info('Atualização cancelada pelo usuário.')
@@ -893,7 +952,8 @@ FFprobe: {get_ffprobe_path()}
         messagebox.showerror(
             'Atualização',
             f'Não foi possível atualizar:\n\n{error}\n\n'
-            'Você pode continuar usando esta versão normalmente.',
+            'Você pode continuar usando esta versão normalmente.\n'
+            f'Instalação atual: {get_install_dir()}',
             parent=self,
         )
 
@@ -1283,3 +1343,9 @@ FFprobe: {get_ffprobe_path()}
         """Abre a pasta de saída no Explorer."""
         if self._output_folder and os.path.isdir(self._output_folder):
             os.startfile(self._output_folder)
+
+    def _open_app_folder(self):
+        """Abre no Explorer a pasta onde o aplicativo está instalado."""
+        folder = get_install_dir()
+        if folder.is_dir():
+            os.startfile(str(folder))

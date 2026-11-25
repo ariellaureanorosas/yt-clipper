@@ -39,3 +39,10 @@ def test_setup_logging_cria_arquivo_e_nao_duplica_handlers(tmp_path, monkeypatch
     assert os.path.isfile(path)
     with open(path, encoding='utf-8') as handle:
         assert 'mensagem de teste' in handle.read()
+
+
+def test_get_logger_herda_handlers_do_logger_configurado():
+    logger = logging_config.get_logger('core.teste')
+
+    assert logger.name == 'ytclipper.core.teste'
+    assert logger.parent is logging.getLogger('ytclipper')

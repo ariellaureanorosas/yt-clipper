@@ -75,5 +75,12 @@ def setup_logging(level: int = logging.INFO) -> str:
 
 
 def get_logger(name: str = _LOGGER_NAME) -> logging.Logger:
-    """Retorna um logger que herda os handlers configurados em setup_logging()."""
-    return logging.getLogger(name)
+    """Retorna um logger filho do logger configurado em ``setup_logging()``.
+
+    Os módulos usam ``get_logger(__name__)``; criar um filho de ``ytclipper``
+    garante que os registros cheguem ao arquivo e ao stderr, em vez de serem
+    descartados pelo logger raiz sem handlers.
+    """
+    if name == _LOGGER_NAME or name.startswith(f'{_LOGGER_NAME}.'):
+        return logging.getLogger(name)
+    return logging.getLogger(f'{_LOGGER_NAME}.{name}')
