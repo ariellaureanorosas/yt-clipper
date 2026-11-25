@@ -16,10 +16,30 @@ if base_dir not in sys.path:
     sys.path.insert(0, base_dir)
 
 
+def _set_app_user_model_id() -> None:
+    """Agrupa janela, barra de tarefas e atalhos sob o mesmo AppUserModelID.
+
+    Sem isso o Windows usa o ícone/identidade do processo hospedeiro e o ícone
+    do aplicativo não aparece corretamente na barra de tarefas.
+    """
+    if sys.platform != 'win32':
+        return
+    try:
+        import ctypes
+
+        from core import APP_ID
+
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(APP_ID)
+    except Exception:  # nunca impede a abertura do aplicativo
+        pass
+
+
 def main():
     from core.bootstrap import bootstrap_config
     from core.logging_config import get_logger, setup_logging
     from ui.app_window import AppWindow
+
+    _set_app_user_model_id()
 
     log_path = setup_logging()
     logger = get_logger(__name__)

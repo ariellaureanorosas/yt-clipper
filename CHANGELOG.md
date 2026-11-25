@@ -7,9 +7,36 @@ projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
 ## [Não publicado]
 
+## [1.3.0] - 2026-11-25
+
 ### Adicionado
 
-- Novo ícone do aplicativo (`icons/app.ico`).
+- **Instalador (Setup.exe)** com Inno Setup: instala em
+  `%LOCALAPPDATA%\Programs\YouTubeClipper` sem pedir senha de administrador,
+  cria atalhos no Menu Iniciar/Área de Trabalho e desinstalador.
+- **ffmpeg/ffprobe embutidos no instalador**: acabou o download de ~80 MB na
+  primeira execução.
+- Build em modo **onedir**: inicialização rápida, sem extrair os arquivos para
+  `%TEMP%` a cada abertura.
+- Botão **"Abrir pasta do app"** e exibição da versão/local de instalação na
+  interface.
+
+### Alterado
+
+- **Atualização automática agora usa o instalador**: baixa o
+  `YouTubeClipper-Setup-<versão>.exe`, confere o SHA-256 e o executa em modo
+  silencioso. O aplicativo é fechado, atualizado e **reaberto automaticamente**,
+  sem o script PowerShell oculto que falhava em silêncio.
+- Ícone do aplicativo com **fundo transparente** (`icons/app.ico`), regerado em
+  todos os tamanhos a partir do master `icons/app.png`.
+- Ícone aplicado à janela, barra de título e **barra de tarefas**
+  (`AppUserModelID`), inclusive nos atalhos criados pelo instalador.
+- Metadados de versão no executável (aba **Detalhes** das Propriedades).
+
+### Removido
+
+- `instalar.bat` (substituído pelo instalador).
+- Script PowerShell que trocava o `.exe` em execução.
 
 ## [1.2.0] - 2026-11-24
 

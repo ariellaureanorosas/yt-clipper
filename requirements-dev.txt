@@ -11,5 +11,5 @@ ruff>=0.17.4
 black>=26.10.1
 pre-commit>=4.7.0
 
-# Empacotamento (usado pelo instalar.bat / build.spec)
+# Empacotamento (usado pelo build.spec e pelo instalador)
 pyinstaller>=6.22.3

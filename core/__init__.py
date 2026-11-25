@@ -1,6 +1,6 @@
 # Módulo core - lógica de download e corte
 
-__version__ = '1.2.1'
+__version__ = '1.3.0'
 
 from core.bootstrap import bootstrap_config
 from core.config import (
@@ -22,8 +22,13 @@ from core.hardware import (
     invalidate_hardware_cache,
 )
 
+# Identificador usado pelo Windows para agrupar janela, barra de tarefas e
+# atalhos do aplicativo (precisa ser igual ao AppUserModelID do instalador).
+APP_ID = 'ArielRosas.YouTubeClipper'
+
 __all__ = [
     '__version__',
+    'APP_ID',
     # bootstrap
     'bootstrap_config',
     # config

@@ -9,67 +9,53 @@ Baixe vídeos do YouTube, corte trechos e converta para formato **vertical (9:16
 
 > Você não precisa saber programar. Siga o passo a passo abaixo.
 >
-> **Requisitos mínimos:** Windows 10/11 (64-bit), 8 GB de RAM e conexão com a
-> internet na primeira execução. Em PCs com pouca memória o app ativa
-> automaticamente o modo econômico.
+> **Requisitos mínimos:** Windows 10/11 (64-bit) e 8 GB de RAM. Em PCs com
+> pouca memória o app ativa automaticamente o modo econômico.
 
 ---
 
 ## ✅ Como instalar (passo a passo)
 
 ### Antes de começar
-- Você precisa de **Windows 10 ou 11**.
-- Precisa ter **internet** (na primeira instalação).
+- Você precisa de **Windows 10 ou 11 (64-bit)**.
+- Precisa de **internet** apenas para baixar o instalador (~85 MB).
 
-### Passo 1 — Baixar o programa
+### Passo 1 — Baixar o instalador
 
-**Opção mais rápida (recomendada):** abra a página de
+Abra a página de
 [**Releases**](https://github.com/ariellaureanorosas/yt-clipper/releases/latest),
-baixe `YouTubeClipper-<versão>.exe` e execute. Não precisa instalar Python.
+baixe `YouTubeClipper-Setup-<versão>.exe` e execute.
 
-**Opção com código-fonte:**
+O instalador já inclui **tudo** o que o programa precisa (Python, yt-dlp e
+ffmpeg). Você **não** precisa instalar nada antes nem baixar dependências
+depois — a primeira execução é imediata.
 
-1. Nesta página, clique no botão verde **`<> Code`**.
-2. Clique em **`Download ZIP`**.
-3. O arquivo **yt-clipper-main.zip** é baixado para a sua pasta "Downloads".
+### Passo 2 — Instalar
 
-### Passo 2 — Extrair (descompactar)
-
-1. Abra a sua pasta **Downloads**.
-2. Clique com o **botão direito** no arquivo **yt-clipper-main.zip**.
-3. Escolha **"Extrair tudo..."** e clique em **Extrair**.
-4. Abra a pasta **yt-clipper-main** que foi criada. Ela contém o arquivo **`instalar.bat`**.
-
-> ⚠️ **Importante:** copie ou extraia para uma pasta do seu computador (ex.: `Documentos`). **Não rode direto de dentro de um arquivo .zip aberto** — o programa não funcionaria.
-
-### Passo 3 — Rodar o instalador
-
-1. Na pasta **yt-clipper-main**, clique **duas vezes** em **`instalar.bat`**.
-2. Vai abrir uma janela preta. **Aguarde** (a primeira vez leva alguns minutos, pois ele instala o que for preciso e prepara tudo).
-3. O instalador instala o **Python automaticamente** se o computador ainda não tiver (baixa ~25 MB).
-4. Ao final, a janela vai mostrar **"Pronto!"**.
-5. Feche a janela clicando em qualquer tecla.
-
-### Passo 4 — Abrir o programa
-
-- Na sua **área de trabalho (Desktop)** apareceu o atalho **"YouTube Clipper"**.
-- Clique duas vezes nele para abrir o programa. 🙂
+1. Clique **duas vezes** no arquivo baixado.
+2. Se o Windows mostrar o aviso azul ("Windows protegeu o computador"), clique
+   em **"Mais informações"** e depois em **"Executar assim mesmo"** — o
+   programa ainda não possui assinatura digital.
+3. Siga o assistente. A instalação é feita **só para o seu usuário**, em
+   `%LOCALAPPDATA%\Programs\YouTubeClipper`, e **não pede senha de administrador**.
+4. Ao final, o programa abre automaticamente. O atalho **"YouTube Clipper"**
+   fica no **Menu Iniciar** e na **Área de Trabalho**.
 
 ### Atualizações automáticas
 
-A partir da versão **1.2.0**, o programa se atualiza sozinho:
+A partir da versão **1.3.0**, o programa se atualiza sozinho:
 
 - Ao abrir, ele verifica se existe uma versão mais nova publicada.
 - Se existir, mostra o que mudou e pergunta se você quer atualizar.
-- O download acontece em segundo plano; ao terminar, o programa fecha e
-  reabre já atualizado.
+- O download acontece em segundo plano; ao terminar, o instalador fecha o
+  programa, atualiza os arquivos e **reabre o aplicativo já atualizado**.
+- O local da instalação aparece em **Ver Diagnóstico do Sistema** e no botão
+  **"Abrir pasta do app"**.
 - Se a atualização falhar (sem internet, por exemplo), o programa continua
   funcionando normalmente e tenta de novo na próxima vez.
 
-> Quem usa uma versão anterior à **1.2.0** precisa baixar esta versão uma única
-> vez. Das próximas em diante, a atualização é automática.
-
-
+> Quem está na **v1.2.1 ou anterior** precisa baixar este Setup **uma única
+> vez**. Das próximas em diante, a atualização é automática.
 
 ---
 
@@ -87,7 +73,7 @@ A partir da versão **1.2.0**, o programa se atualiza sozinho:
 
 > 💡 Dica: quanto menor o trecho, mais rápido fica pronto. Cortes que não mudam o formato são quase instantâneos.
 >
-> ⚠️ **Na primeira vez**, o programa pode precisar baixar o **ffmpeg** (~80 MB) e pedir que você aguarde a barra chegar a 100% antes de processar. Isso só acontece uma vez.
+> ✅ O **ffmpeg** já vem incluído no instalador — não há download na primeira execução.
 
 ---
 
@@ -97,10 +83,10 @@ A partir da versão **1.2.0**, o programa se atualiza sozinho:
 O Windows às vezes desconfia de programas recém-criados. Clique em **"Mais informações"** e depois em **"Executar assim mesmo"**.
 
 ### A janela do instalador fecha sozinha e não cria o atalho
-Reinicie o computador e rode o **`instalar.bat`** novamente. Se o erro persistir na hora de instalar o Python, instale o Python manualmente de https://www.python.org/downloads/ (marcando a opção "Add python.exe to PATH") e rode o instalador de novo.
+Feche antivírus/otimizadores temporariamente e execute o `YouTubeClipper-Setup-<versão>.exe` novamente. Se o Windows bloquear o arquivo, clique com o botão direito → **Propriedades** → marque **"Desbloquear"** → **Aplicar**.
 
 ### "Não foi possível baixar o ffmpeg"
-Isso acontece sem internet ou com rede bloqueada. Tente de novo mais tarde ou verifique sua conexão.
+Esse aviso não deve aparecer na versão instalada (o ffmpeg vai embutido). Se aparecer, reinstale pelo Setup para restaurar os arquivos.
 
 ### Erro de download: "The read operation timed out"
 A conexão com o YouTube ficou lenta ou instável. O programa já tenta novamente até 5 vezes automaticamente. Se continuar:
@@ -116,7 +102,7 @@ Isso normalmente é **falta de memória** (o Windows encerra o ffmpeg). No compu
 4. Clique em **"Ver Diagnóstico do Sistema"** e envie o texto junto do log ao reportar o problema.
 
 ### O programa não abre
-Feche e abra de novo. Se continuar, rode o **`instalar.bat`** novamente (ele conserta tudo).
+Feche e abra de novo. Se continuar, execute o `YouTubeClipper-Setup-<versão>.exe` novamente (ele reinstala por cima, mantendo suas configurações e logs).
 
 ---
 
@@ -190,28 +176,36 @@ Em caso de erro, o aplicativo grava um log de diagnóstico em:
 %LOCALAPPDATA%\YouTubeClipper\logs\app.log
 ```
 
-### Gerar o executável
+### Gerar o executável e o instalador
 
 ```bash
-pyinstaller build.spec
+# 1) pasta dist/YouTubeClipper (exe + dependências + ffmpeg embutido)
+pyinstaller --clean --noconfirm build.spec
+
+# 2) instalador dist/installer/YouTubeClipper-Setup-<versão>.exe
+ISCC.exe /DAppVersion=1.3.0 installer\ytclipper.iss
 ```
 
-O `instalar.bat` faz isso automaticamente e ainda cria o atalho na área de trabalho.
+O ffmpeg/ffprobe precisam estar em `assets/` antes do passo 1 (o CI baixa
+automaticamente; localmente, coloque os dois `.exe` na pasta). O script
+`tools/make_icons.py` regenera `icons/app.png` e `icons/app.ico` a partir da
+arte, com fundo transparente.
 
 ### Publicar uma nova versão (para o auto-update chegar aos usuários)
 
-1. Atualize `__version__` em `core/__init__.py` (ex.: `1.2.1`) e o `CHANGELOG.md`.
+1. Atualize `__version__` em `core/__init__.py` (ex.: `1.3.0`) e o `CHANGELOG.md`.
 2. Faça commit e push na `main`.
 3. Crie e envie a tag correspondente:
 
 ```bash
-git tag v1.2.1
-git push origin v1.2.1
+git tag v1.3.0
+git push origin v1.3.0
 ```
 
 O workflow de release valida que a tag e o `__version__` são iguais, roda os
-testes, compila o `.exe`, gera o `.sha256` e publica na Release. O aplicativo
-dos usuários detecta essa Release na próxima abertura e se atualiza.
+testes, baixa o ffmpeg, compila o app, gera o instalador e o `.sha256` e publica
+na Release. O aplicativo dos usuários detecta essa Release na próxima abertura
+e se atualiza.
 
 
 ### Correção (corte sem travamento no início)
@@ -232,7 +226,8 @@ yt-clipper/
 │   ├── bootstrap.py        # Aplica o perfil detectado na inicialização
 │   ├── downloader.py       # Download via yt-dlp
 │   ├── cutter.py           # Corte/conversão via ffmpeg (Strategy Pattern)
-│   ├── updater.py          # Auto-update via GitHub Releases
+│   ├── updater.py          # Auto-update via instalador das Releases
+│   ├── resources.py        # Caminhos de recursos empacotados
 │   ├── processes.py        # Registro/cancelamento de subprocessos
 │   └── logging_config.py   # Logging em arquivo
 ├── tests/                  # Testes automatizados (pytest + coverage)
@@ -242,10 +237,14 @@ yt-clipper/
 │   ├── ISSUE_TEMPLATE/     # Templates de bug/feature
 │   ├── dependabot.yml      # Atualizações de dependências
 │   └── pull_request_template.md
-├── assets/                 # ffmpeg/ffprobe (baixados na 1ª execução)
+├── assets/                 # ffmpeg/ffprobe (embutidos no instalador)
 ├── icons/
-│   └── app.ico             # Ícone do aplicativo
-├── instalar.bat            # Instalador para usuários (compila + atalho)
+│   ├── app.ico             # Ícone do aplicativo e do instalador
+│   └── app.png             # Master transparente usado para gerar o .ico
+├── installer/
+│   └── ytclipper.iss       # Script do Inno Setup (gera o Setup.exe)
+├── tools/
+│   └── make_icons.py       # Regenera os ícones com fundo transparente
 ├── requirements.txt
 ├── requirements-dev.txt
 ├── pyproject.toml          # Configuração de lint/format/testes/cobertura

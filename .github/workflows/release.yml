@@ -1,7 +1,7 @@
 name: Release
 
-# Publica um executável para Windows sempre que uma tag "v*" é enviada.
-# Ex.: git tag v1.1.0 && git push origin v1.1.0
+# Publica o instalador para Windows sempre que uma tag "v*" é enviada.
+# Ex.: git tag v1.3.0 && git push origin v1.3.0
 on:
   push:
     tags:
@@ -14,7 +14,7 @@ jobs:
   build:
     name: Compilar e publicar
     runs-on: windows-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7
 
@@ -40,16 +40,51 @@ jobs:
       - name: Rodar testes
         run: python -m pytest -q
 
-      - name: Compilar executável
+      - name: Baixar ffmpeg/ffprobe para embutir no instalador
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          New-Item -ItemType Directory -Force assets | Out-Null
+          Invoke-WebRequest -Uri 'https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip' -OutFile ffmpeg.zip
+          Expand-Archive ffmpeg.zip -DestinationPath ffmpeg -Force
+          $ffmpeg = Get-ChildItem ffmpeg -Recurse -Filter ffmpeg.exe | Select-Object -First 1
+          if (-not $ffmpeg) { throw 'ffmpeg.exe não encontrado no pacote baixado.' }
+          Copy-Item $ffmpeg.FullName assets/ffmpeg.exe -Force
+          Copy-Item (Join-Path $ffmpeg.DirectoryName 'ffprobe.exe') assets/ffprobe.exe -Force
+          Get-Item assets/ffmpeg.exe, assets/ffprobe.exe | Select-Object Name, Length | Format-Table
+
+      - name: Compilar aplicativo (onedir)
         run: pyinstaller --clean --noconfirm build.spec
+
+      - name: Gerar instalador (Inno Setup)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $version = '${{ github.ref_name }}'.TrimStart('v')
+          $candidates = @(
+            "${env:ProgramFiles}\Inno Setup 7\ISCC.exe",
+            "${env:ProgramFiles(x86)}\Inno Setup 7\ISCC.exe",
+            "${env:ProgramFiles}\Inno Setup 6\ISCC.exe",
+            "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          )
+          $iscc = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $iscc) {
+            choco install innosetup --no-progress -y
+            $iscc = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+          }
+          if (-not $iscc) { throw 'Inno Setup (ISCC.exe) não encontrado.' }
+          Write-Host "Usando $iscc"
+          & $iscc "/DAppVersion=$version" 'installer\ytclipper.iss'
+          if ($LASTEXITCODE -ne 0) { throw "ISCC falhou (exit $LASTEXITCODE)" }
+          Get-ChildItem dist/installer | Select-Object Name, Length | Format-Table
 
       - name: Gerar checksum
         shell: pwsh
         run: |
           $version = '${{ github.ref_name }}'.TrimStart('v')
-          $asset = "YouTubeClipper-$version.exe"
-          Copy-Item dist/YouTubeClipper.exe $asset
-          (Get-FileHash $asset -Algorithm SHA256).Hash.ToLower() + "  $asset" | Out-File -Encoding ascii "$asset.sha256"
+          $asset = "dist/installer/YouTubeClipper-Setup-$version.exe"
+          $name = Split-Path $asset -Leaf
+          (Get-FileHash $asset -Algorithm SHA256).Hash.ToLower() + "  $name" | Out-File -Encoding ascii "$asset.sha256"
           Get-Content "$asset.sha256"
 
       - name: Publicar Release
@@ -58,18 +93,29 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           $tag = '${{ github.ref_name }}'
+          $version = $tag.TrimStart('v')
           $notes = @"
           ## YouTube Clipper $tag
 
-          Baixe o arquivo `YouTubeClipper-$($tag.TrimStart('v')).exe` abaixo e execute.
-          O checksum SHA-256 está disponível no arquivo `.sha256`.
+          Baixe o arquivo YouTubeClipper-Setup-$version.exe abaixo e execute.
+          O instalador já inclui **tudo** o que o aplicativo precisa (Python,
+          yt-dlp e ffmpeg) — não é preciso instalar nada antes nem baixar
+          dependências na primeira execução.
+
+          - Instala em %LOCALAPPDATA%\Programs\YouTubeClipper (não pede senha de administrador).
+          - Cria atalhos no Menu Iniciar e na Área de Trabalho.
+          - As próximas atualizações são baixadas e instaladas automaticamente.
+          - O checksum SHA-256 está disponível no arquivo .sha256.
+
+          > **Atualizando da v1.2.1 ou anterior:** baixe e execute este Setup
+          > uma vez. A partir desta versão as atualizações voltam a ser automáticas.
 
           Consulte o [CHANGELOG](https://github.com/ariellaureanorosas/yt-clipper/blob/main/CHANGELOG.md)
           para ver o que mudou.
           "@
           gh release create $tag `
             --title "YouTube Clipper $tag" `
-            --generate-notes `
             --notes $notes `
             --verify-tag `
-            (Get-ChildItem YouTubeClipper-*.exe, YouTubeClipper-*.exe.sha256 | ForEach-Object { $_.FullName })
+            "dist/installer/YouTubeClipper-Setup-$version.exe" `
+            "dist/installer/YouTubeClipper-Setup-$version.exe.sha256"

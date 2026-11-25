@@ -1,9 +1,11 @@
 """
 Atualização automática do YouTube Clipper a partir das Releases do GitHub.
 
-O executável consulta a última release, baixa o novo ``.exe``, confere o
-SHA-256 e agenda a troca do arquivo em execução por um script auxiliar do
-PowerShell — o Windows não permite sobrescrever um ``.exe`` aberto.
+O aplicativo consulta a última release, baixa o instalador
+(``YouTubeClipper-Setup-<versão>.exe``), confere o SHA-256 e o executa em modo
+silencioso. O instalador (Inno Setup) fecha a instância em execução, substitui
+os arquivos e reabre o aplicativo já atualizado — por isso não é mais
+necessário o script PowerShell que trocava o ``.exe`` em uso.
 
 Ao rodar direto do código (``python main.py``) nada é aplicado: o módulo
 apenas expõe as funções usadas pela interface.
@@ -26,15 +28,17 @@ from urllib.request import Request, urlopen
 from core import __version__
 from core.config import get_config
 from core.logging_config import get_logger
+from core.resources import executable_dir, is_frozen
 
 logger = get_logger(__name__)
 
 REPOSITORY = 'ariellaureanorosas/yt-clipper'
 _API_LATEST_RELEASE = f'https://api.github.com/repos/{REPOSITORY}/releases/latest'
-_ASSET_PREFIX = 'YouTubeClipper-'
+_INSTALLER_PREFIX = 'YouTubeClipper-Setup-'
 _CHUNK_SIZE = 256 * 1024
 _USER_AGENT = f'YouTubeClipper-Updater/{__version__}'
 _VERSION_RE = re.compile(r'^[vV]?(\d+(?:\.\d+)*)(?:[-+].*)?$')
+_UNINSTALLER_NAME = 'unins000.exe'
 
 
 class UpdateError(RuntimeError):
@@ -88,9 +92,14 @@ def is_newer(candidate: str, current: str) -> bool:
 # ── Ambiente ──────────────────────────────────────────────────
 
 
-def is_frozen() -> bool:
-    """``True`` quando rodando como executável empacotado pelo PyInstaller."""
-    return bool(getattr(sys, 'frozen', False))
+def get_install_dir() -> Path:
+    """Pasta onde o aplicativo está instalado (ou o projeto, em modo dev)."""
+    return executable_dir()
+
+
+def is_installed() -> bool:
+    """``True`` quando o aplicativo foi instalado pelo Setup (Inno Setup)."""
+    return is_frozen() and (get_install_dir() / _UNINSTALLER_NAME).is_file()
 
 
 def _updates_dir() -> Path:
@@ -146,20 +155,21 @@ def _safe_remove(path: Path) -> None:
 # ── Seleção de assets ─────────────────────────────────────────
 
 
-def _find_exe_asset(assets: list[dict], version: str) -> dict | None:
-    expected = f'{_ASSET_PREFIX}{version}.exe'
+def _find_installer_asset(assets: list[dict], version: str) -> dict | None:
+    """Localiza o ``YouTubeClipper-Setup-<versão>.exe`` da release."""
+    expected = f'{_INSTALLER_PREFIX}{version}.exe'
     for asset in assets:
         if asset.get('name') == expected:
             return asset
     for asset in assets:
         name = str(asset.get('name', ''))
-        if name.startswith(_ASSET_PREFIX) and name.endswith('.exe'):
+        if name.startswith(_INSTALLER_PREFIX) and name.endswith('.exe'):
             return asset
     return None
 
 
-def _find_checksum_asset(assets: list[dict], exe_name: str) -> dict | None:
-    expected = f'{exe_name}.sha256'
+def _find_checksum_asset(assets: list[dict], installer_name: str) -> dict | None:
+    expected = f'{installer_name}.sha256'
     for asset in assets:
         if asset.get('name') == expected:
             return asset
@@ -202,23 +212,28 @@ def check_for_update(
 
     version = tag.lstrip('vV').strip()
     assets = release.get('assets') or []
-    exe_asset = _find_exe_asset(assets, version)
-    if not exe_asset:
-        logger.warning('Release %s não possui executável anexado.', tag)
+    installer_asset = _find_installer_asset(assets, version)
+    if not installer_asset:
+        logger.warning(
+            'Release %s não possui instalador (%s<versão>.exe) anexado.',
+            tag,
+            _INSTALLER_PREFIX,
+        )
         return None
 
-    checksum_asset = _find_checksum_asset(assets, str(exe_asset.get('name')))
+    installer_name = str(installer_asset.get('name'))
+    checksum_asset = _find_checksum_asset(assets, installer_name)
     return UpdateInfo(
         version=version,
         tag=tag,
         notes=str(release.get('body') or ''),
-        download_url=str(exe_asset.get('browser_download_url') or ''),
+        download_url=str(installer_asset.get('browser_download_url') or ''),
         checksum_url=(
             str(checksum_asset.get('browser_download_url') or '')
             if checksum_asset
             else None
         ),
-        size=int(exe_asset.get('size') or 0),
+        size=int(installer_asset.get('size') or 0),
     )
 
 
@@ -275,7 +290,7 @@ def download_update(
     progress_callback=None,
     cancel_event=None,
 ) -> Path:
-    """Baixa e valida o executável da atualização, retornando o caminho."""
+    """Baixa e valida o instalador da atualização, retornando o caminho."""
     target_dir = _updates_dir()
     target_dir.mkdir(parents=True, exist_ok=True)
 
@@ -317,98 +332,65 @@ def download_update(
 
 # ── Aplicação da atualização ──────────────────────────────────
 
-_UPDATE_SCRIPT = """param(
-    [Parameter(Mandatory = $true)][int]$ProcessId,
-    [Parameter(Mandatory = $true)][string]$CurrentExe,
-    [Parameter(Mandatory = $true)][string]$NewExe
-)
 
-while (Get-Process -Id $ProcessId -ErrorAction SilentlyContinue) {
-    Start-Sleep -Seconds 1
-}
+def build_installer_command(installer: Path, log_path: Path) -> list[str]:
+    """Monta o comando do instalador para atualização silenciosa.
 
-$staged = "$CurrentExe.new"
-$deadline = (Get-Date).AddSeconds(60)
-$installed = $false
-
-while ((Get-Date) -lt $deadline) {
-    try {
-        Copy-Item -LiteralPath $NewExe -Destination $staged -Force
-        if ((Get-Item -LiteralPath $staged).Length -eq (Get-Item -LiteralPath $NewExe).Length) {
-            Move-Item -LiteralPath $staged -Destination $CurrentExe -Force
-            $installed = $true
-            break
-        }
-    } catch {
-        Start-Sleep -Seconds 1
-    }
-}
-
-if ($installed) {
-    Start-Process -FilePath $CurrentExe
-    Start-Sleep -Seconds 2
-}
-
-Remove-Item -LiteralPath $NewExe -Force -ErrorAction SilentlyContinue
-Remove-Item -LiteralPath $staged -Force -ErrorAction SilentlyContinue
-Remove-Item -LiteralPath $PSCommandPath -Force -ErrorAction SilentlyContinue
-"""
+    ``/SILENT`` esconde o assistente mas mantém a janela de progresso, para o
+    usuário ver que a atualização está acontecendo.
+    """
+    return [
+        str(installer),
+        '/SILENT',
+        '/SUPPRESSMSGBOXES',
+        '/NORESTART',
+        '/CLOSEAPPLICATIONS',
+        f'/LOG={log_path}',
+    ]
 
 
-def build_update_script() -> str:
-    """Retorna o script PowerShell que troca o executável em uso."""
-    return _UPDATE_SCRIPT
+def apply_update_and_restart(installer: Path) -> None:
+    """Executa o instalador silencioso e encerra para ele assumir.
 
-
-def apply_update_and_restart(new_exe: Path) -> None:
-    """Agenda a troca do executável e encerra para o script assumir.
-
-    O chamador deve fechar a janela logo depois (o script espera o processo
-    atual terminar antes de substituir o arquivo).
+    O instalador fecha a instância atual (``/CLOSEAPPLICATIONS``), substitui os
+    arquivos e reabre o aplicativo já atualizado. O chamador deve fechar a
+    janela logo depois.
     """
     if not is_frozen():
         raise UpdateError(
-            'A atualização automática só está disponível no executável (.exe).'
+            'A atualização automática só está disponível no aplicativo '
+            'instalado (.exe).'
         )
     if sys.platform != 'win32':
         raise UpdateError('A atualização automática está disponível só no Windows.')
 
-    current_exe = Path(sys.executable).resolve()
-    new_exe = Path(new_exe).resolve()
-    if not new_exe.is_file():
-        raise UpdateError('Arquivo de atualização não encontrado.')
+    installer_path = Path(installer).resolve()
+    if not installer_path.is_file():
+        raise UpdateError('Instalador da atualização não encontrado.')
 
-    script_dir = _updates_dir()
-    script_dir.mkdir(parents=True, exist_ok=True)
-    script_path = script_dir / f'update-{os.getpid()}.ps1'
-    script_path.write_text(build_update_script(), encoding='utf-8')
+    log_path = _updates_dir() / f'install-{int(time.time())}.log'
+    command = build_installer_command(installer_path, log_path)
 
     creationflags = getattr(subprocess, 'CREATE_NO_WINDOW', 0) | getattr(
         subprocess, 'DETACHED_PROCESS', 0
     )
-    subprocess.Popen(
-        [
-            'powershell.exe',
-            '-NoProfile',
-            '-ExecutionPolicy',
-            'Bypass',
-            '-WindowStyle',
-            'Hidden',
-            '-File',
-            str(script_path),
-            '-ProcessId',
-            str(os.getpid()),
-            '-CurrentExe',
-            str(current_exe),
-            '-NewExe',
-            str(new_exe),
-        ],
-        close_fds=True,
-        creationflags=creationflags,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
+    try:
+        subprocess.Popen(
+            command,
+            close_fds=True,
+            creationflags=creationflags,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    except OSError as exc:
+        raise UpdateError(f'Não foi possível executar o instalador: {exc}') from exc
+
+    logger.info(
+        'Instalador %s iniciado; o aplicativo será reinstalado em %s. Log: %s',
+        installer_path.name,
+        get_install_dir(),
+        log_path,
     )
-    logger.info('Atualização agendada; o aplicativo será reiniciado.')
 
 
 def cleanup_update_cache(max_age_days: int = 7) -> None:
